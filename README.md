@@ -35,7 +35,7 @@ MediaPipe 給的是 **21 個關鍵點在畫面上的 2D 座標**，但「食指�
 ## 跑起來
 
 ```bash
-npm test        # 用合成和弦驗證辨識核心，不需要吉他也不需要麥克風
+npm test        # 合成和弦驗證 + 走鐘檢查（不需要吉他也不需要麥克風）
 npm run serve   # 開 http://localhost:4173
 ```
 
@@ -47,7 +47,9 @@ npm run serve   # 開 http://localhost:4173
 |---|---|
 | `src/chroma.js` | 辨識核心。純函式，不碰 DOM 與麥克風 —— 所以可離線測試 |
 | `src/selftest.mjs` | 合成 9 個開放和弦（含泛音）→ DFT → 辨識，驗證演算法 |
-| `index.html` | 網頁 UI：麥克風、即時判定、chroma 柱狀圖 |
+| `index.html` | 網頁 UI（模組版，本機開發用） |
+| `standalone.html` | **單一檔案版** — 給 Artifact 用，可直接開連結測試 |
+| `src/drift-guard.mjs` | 擋 `standalone.html` 與 `chroma.js` 的和弦定義走鐘 |
 
 把 DSP 核心跟 UI 拆開是刻意的：同一份程式碼既吃麥克風的即時音訊，
 也吃合成出來的測試音。**沒有吉他也能證明演算法會動。**
