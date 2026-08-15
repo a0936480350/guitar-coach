@@ -8,7 +8,7 @@
 // 自己算 DFT → 丟進 computeChroma → 看 identify 猜對沒。
 // ─────────────────────────────────────────────────────────────────────────────
 
-import { computeChroma, identify, chordNotes, NOTE_NAMES } from './chroma.js';
+import { computeChroma, identify, CHORD_SETS, setChordSet, ambiguousWith, ambiguityGroups } from './chroma.js';
 
 const SR = 22050;
 const FFT = 8192;
@@ -91,41 +91,65 @@ function magnitudeSpectrum(signal, fftSize) {
   return mag;
 }
 
-// ── 執行 ──────────────────────────────────────────────────────────────────────
-console.log('和弦辨識自我測試 · 合成音 → chroma → 比對\n');
-console.log('和弦   判定    分數   領先   把握   前三名');
-console.log('─'.repeat(64));
+// ── 更多和弦的實際按法（進階級才會用到）──────────────────────────────────────
+const MORE = {
+  'G7':   ['G2','B2','D3','G3','B3','F4'],
+  'C7':   ['x','C3','E3','A#3','C4','E4'],
+  'D7':   ['x','x','D3','A3','C4','F#4'],
+  'A7':   ['x','A2','E3','G3','C#4','E4'],
+  'E7':   ['E2','B2','D3','G#3','B3','E4'],
+  'Am7':  ['x','A2','E3','G3','C4','E4'],
+  'Em7':  ['E2','B2','D3','G3','B3','E4'],
+  'Dm7':  ['x','x','D3','A3','C4','F4'],
+  'Cmaj7':['x','C3','E3','G3','B3','E4'],
+  'Bm':   ['x','B2','F#3','B3','D4','F#4'],
+  'Dsus4':['x','x','D3','A3','D4','G4'],
+  'Dsus2':['x','x','D3','A3','D4','E4'],
+};
 
-let pass = 0, total = 0;
-const failures = [];
+function runTier(key){
+  setChordSet(key);
+  const set = CHORD_SETS[key];
+  const cases = Object.assign({}, VOICINGS);
+  for (const [n,v] of Object.entries(MORE)) if (set.spec[n]) cases[n] = v;
 
-for (const [expected, voicing] of Object.entries(VOICINGS)) {
-  const sig = synthChord(voicing);
-  const mag = magnitudeSpectrum(sig, FFT);
-  const chroma = computeChroma(mag, SR, FFT);
-  const r = identify(chroma);
-
-  total++;
-  const ok = r.chord === expected;
-  if (ok) pass++; else failures.push({ expected, got: r.chord, ranked: r.ranked });
-
-  const top3 = r.ranked.map(x => `${x.chord}:${x.score.toFixed(2)}`).join(' ');
-  console.log(
-    `${expected.padEnd(6)} ${(ok ? 'OK  ' : 'FAIL').padEnd(7)}` +
-    `${r.score.toFixed(3)}  ${r.margin.toFixed(3)}  ` +
-    `${(r.confident ? 'yes' : 'no ').padEnd(6)} ${top3}`
-  );
-}
-
-console.log('─'.repeat(64));
-console.log(`\n通過 ${pass}/${total}`);
-
-if (failures.length) {
-  console.log('\n失敗細節：');
-  for (const f of failures) {
-    console.log(`  期望 ${f.expected}，判成 ${f.got}`);
-    console.log(`    ${f.ranked.map(x => `${x.chord}=${x.score.toFixed(3)}`).join('  ')}`);
+  let pass = 0, total = 0, ambig = 0;
+  const fails = [], ambigList = [];
+  for (const [expected, voicing] of Object.entries(cases)){
+    const mag = magnitudeSpectrum(synthChord(voicing), FFT);
+    const r = identify(computeChroma(mag, SR, FFT));
+    total++;
+    if (r.chord === expected) pass++;
+    else if (ambiguousWith(expected).includes(r.chord)) { ambig++; ambigList.push(expected + '≡' + r.chord); }
+    else fails.push(expected + '→' + r.chord);
   }
+  const pct = (100 * (pass + ambig) / total).toFixed(0);
+  console.log(set.label.padEnd(20) + ' ' +
+    String(Object.keys(set.spec).length).padStart(2) + ' 個和弦   測 ' +
+    String(total).padStart(2) + ' 個   通過 ' + String(pass).padStart(2) + '/' + total +
+    ' (' + pct + '%' + (ambig ? '，含 ' + ambig + ' 個原理上不可分' : '') + ')');
+  if (ambigList.length) console.log(' '.repeat(22) + '音級完全相同、原理上分不出：' + ambigList.join('  '));
+  if (fails.length)     console.log(' '.repeat(22) + '真誤判：' + fails.join('  '));
+  return { key, pass, total, ambig, fails };
 }
 
-process.exit(failures.length ? 1 : 0);
+console.log('和弦辨識自我測試 · 合成音 → chroma → 比對');
+console.log('');
+const results = ['basic','seventh','full'].map(runTier);
+console.log('');
+console.log('和弦越多越不準，這是必然的 —— 所以由使用者自己選級別，不預設全開。');
+
+setChordSet('basic');
+const basic = results[0];
+const groups = (() => { setChordSet('full'); const g = ambiguityGroups(); setChordSet('basic'); return g; })();
+console.log('');
+console.log('音級集合完全相同的和弦（chroma 原理上分不出，不是演算法問題）：');
+groups.forEach(g => console.log('  ' + g.join(' ＝ ')));
+
+if (basic.pass !== basic.total){
+  console.error('');
+  console.error('✗ 初級組必須 100% 通過，目前 ' + basic.pass + '/' + basic.total);
+  process.exit(1);
+}
+console.log('');
+console.log('✓ 初級組 ' + basic.pass + '/' + basic.total + '（基準線，掉了就是回歸）');

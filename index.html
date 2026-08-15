@@ -2,276 +2,595 @@
 <html lang="zh-Hant">
 <head>
 <meta charset="utf-8" />
-<meta name="viewport" content="width=device-width, initial-scale=1" />
-<title>吉他練習回饋 · M0 和弦辨識</title>
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+<title>吉他練習回饋</title>
 <style>
   :root{
-    --ground:#0e1116; --panel:#161b24; --panel-2:#1e2430;
-    --ink:#e8ebf0; --muted:#95a0b0; --line:#2a3242;
-    --ok:#4fbf87; --bad:#e0736a; --wait:#e0a45c; --brand:#5fa8d3;
-    --mono:ui-monospace,"SF Mono",Consolas,Menlo,monospace;
-    --sans:-apple-system,"Segoe UI","PingFang TC","Microsoft JhengHei",sans-serif;
+    --ground:#0b0e13; --panel:#141922; --panel-2:#1c2330;
+    --ink:#e9edf3; --ink-2:#c3cad6; --muted:#8b96a7; --line:#28313f;
+    --ok:#4ec98a; --bad:#e5736a; --wait:#e3a95f; --brand:#5fa8d3;
+    --mono:ui-monospace,"SF Mono","Cascadia Code",Consolas,Menlo,monospace;
+    --sans:-apple-system,BlinkMacSystemFont,"Segoe UI","PingFang TC","Microsoft JhengHei",sans-serif;
   }
   *{box-sizing:border-box}
-  body{margin:0;background:var(--ground);color:var(--ink);font-family:var(--sans);
-       line-height:1.6;-webkit-font-smoothing:antialiased}
-  .wrap{max-width:880px;margin:0 auto;padding:28px 20px 80px}
-  h1{font-size:1.5rem;margin:0 0 4px}
-  .sub{color:var(--muted);font-size:.9rem;margin:0 0 24px}
+  html,body{margin:0;padding:0}
+  body{background:var(--ground);color:var(--ink);font-family:var(--sans);line-height:1.65;
+       -webkit-font-smoothing:antialiased;-webkit-tap-highlight-color:transparent}
+  .wrap{max-width:900px;margin:0 auto;padding:20px 15px 70px}
+  h1{font-size:1.3rem;margin:0 0 2px}
+  .sub{color:var(--muted);font-size:.85rem;margin:0 0 16px}
+  h2{font-size:.95rem;margin:0 0 6px}
 
-  .bar{display:flex;flex-wrap:wrap;gap:10px;align-items:center;margin-bottom:22px}
-  button{font-family:inherit;font-size:.92rem;font-weight:600;padding:10px 18px;
-         border-radius:8px;border:1px solid var(--line);background:var(--panel-2);
-         color:var(--ink);cursor:pointer}
-  button:hover:not(:disabled){border-color:var(--brand)}
-  button:disabled{opacity:.45;cursor:not-allowed}
+  .tabs{display:flex;gap:6px;margin-bottom:16px;flex-wrap:wrap}
+  .tabs button{flex:1;min-width:100px}
+  button{font-family:inherit;font-size:.89rem;font-weight:600;padding:10px 15px;border-radius:9px;
+         border:1px solid var(--line);background:var(--panel-2);color:var(--ink);cursor:pointer;
+         touch-action:manipulation}
+  button:active:not(:disabled){transform:translateY(1px)}
+  button:disabled{opacity:.4;cursor:not-allowed}
   button.primary{background:var(--brand);border-color:var(--brand);color:#06121b}
+  button[aria-selected="true"]{background:var(--brand);border-color:var(--brand);color:#06121b}
   button:focus-visible{outline:2px solid var(--brand);outline-offset:2px}
-
-  .status{font-family:var(--mono);font-size:.82rem;color:var(--muted)}
-
-  .stage{background:var(--panel);border:1px solid var(--line);border-radius:14px;
-         padding:26px;margin-bottom:18px}
-  .target{display:flex;align-items:baseline;gap:14px;flex-wrap:wrap;margin-bottom:20px}
-  .target label{font-family:var(--mono);font-size:.72rem;letter-spacing:.14em;
-                text-transform:uppercase;color:var(--muted)}
-  select{font-family:inherit;font-size:1rem;padding:7px 12px;border-radius:7px;
-         background:var(--panel-2);color:var(--ink);border:1px solid var(--line)}
-
-  .readout{display:grid;grid-template-columns:1fr auto;gap:20px;align-items:center}
-  @media(max-width:560px){.readout{grid-template-columns:1fr}}
-  .heard{font-size:4rem;font-weight:800;line-height:1;font-family:var(--mono);
-         letter-spacing:-.02em}
-  .heard.ok{color:var(--ok)} .heard.bad{color:var(--bad)} .heard.wait{color:var(--muted)}
-  .verdict{font-size:1.05rem;font-weight:700}
-  .detail{font-family:var(--mono);font-size:.8rem;color:var(--muted);margin-top:6px}
-
-  .meter{height:8px;background:var(--panel-2);border-radius:4px;overflow:hidden;
-         margin-top:14px}
-  .meter i{display:block;height:100%;background:var(--brand);width:0;
-           transition:width .08s linear}
-
-  .chroma{display:grid;grid-template-columns:repeat(12,1fr);gap:5px;margin-top:22px}
-  .chroma div{text-align:center}
-  .chroma .col{height:76px;background:var(--panel-2);border-radius:4px;
-               position:relative;overflow:hidden}
-  .chroma .col i{position:absolute;bottom:0;left:0;right:0;background:var(--brand);
-                 height:0;transition:height .1s linear}
-  .chroma .col.want i{background:var(--ok)}
-  .chroma span{font-family:var(--mono);font-size:.62rem;color:var(--muted);
-               display:block;margin-top:5px}
-  .chroma .lbl.want{color:var(--ok);font-weight:700}
-
-  table{width:100%;border-collapse:collapse;font-size:.86rem;margin-top:6px}
-  th{text-align:left;font-family:var(--mono);font-size:.68rem;letter-spacing:.1em;
-     text-transform:uppercase;color:var(--muted);padding-bottom:8px;font-weight:600}
-  td{padding:7px 0;border-top:1px solid var(--line);font-family:var(--mono)}
-  .note{background:var(--panel);border:1px solid var(--line);border-radius:12px;
-        padding:18px 22px;font-size:.88rem;color:var(--muted)}
+  .bar{display:flex;flex-wrap:wrap;gap:8px;align-items:center;margin-bottom:14px}
+  .hint{font-family:var(--mono);font-size:.74rem;color:var(--muted)}
+  .card{background:var(--panel);border:1px solid var(--line);border-radius:14px;padding:19px;
+        margin-bottom:13px}
+  .lbl{font-family:var(--mono);font-size:.66rem;letter-spacing:.14em;text-transform:uppercase;
+       color:var(--muted)}
+  .note{color:var(--muted);font-size:.83rem}
   .note b{color:var(--ink)}
-  code{background:var(--panel-2);padding:2px 6px;border-radius:4px;font-family:var(--mono);
-       font-size:.85em}
+  .warn{border-color:#5a4420;background:#211a10}
+
+  .chip{font-family:var(--mono);font-size:.88rem;font-weight:700;padding:9px 13px;border-radius:8px;
+        background:var(--panel-2);border:1px solid var(--line);color:var(--ink-2);cursor:pointer;
+        min-width:50px;text-align:center}
+  .chip[aria-pressed="true"]{background:var(--brand);border-color:var(--brand);color:#06121b}
+  .targets{display:flex;flex-wrap:wrap;gap:6px;margin-top:9px}
+
+  .big{font-family:var(--mono);font-size:3.3rem;font-weight:800;line-height:1.05;letter-spacing:-.03em}
+  .big.ok{color:var(--ok)} .big.bad{color:var(--bad)}
+  .big.wait{color:var(--muted)} .big.hold{color:var(--wait)}
+  .say{font-size:1rem;font-weight:700;margin-top:2px}
+  .nums{font-family:var(--mono);font-size:.74rem;color:var(--muted);margin-top:6px}
+  .main{display:grid;grid-template-columns:1fr 190px;gap:17px;align-items:start}
+  @media(max-width:620px){.main{grid-template-columns:1fr}}
+
+  .rank{width:100%;border-collapse:collapse;font-family:var(--mono);font-size:.78rem}
+  .rank th{text-align:left;font-size:.6rem;letter-spacing:.12em;text-transform:uppercase;
+           color:var(--muted);padding-bottom:5px}
+  .rank td{padding:4px 0;border-top:1px solid var(--line)}
+  .rank td:last-child{text-align:right;color:var(--ink-2)}
+
+  .rowmeter{display:grid;grid-template-columns:70px 1fr;gap:9px;align-items:center;margin-top:8px}
+  .track{height:7px;background:var(--panel-2);border-radius:4px;overflow:hidden}
+  .track i{display:block;height:100%;width:0;border-radius:4px;transition:width .07s linear}
+  .track i.vol{background:var(--brand)} .track i.hold{background:var(--wait)}
+
+  .chroma{display:grid;grid-template-columns:repeat(12,1fr);gap:4px;margin-top:15px}
+  .chroma .col{height:58px;background:var(--panel-2);border-radius:4px;position:relative;overflow:hidden}
+  .chroma .col i{position:absolute;bottom:0;left:0;right:0;height:0;background:#3f6d8c;
+                 transition:height .09s linear}
+  .chroma .col.want i{background:var(--ok)}
+  .chroma span{font-family:var(--mono);font-size:.58rem;color:var(--muted);display:block;
+               text-align:center;margin-top:4px}
+  .chroma span.want{color:var(--ok);font-weight:700}
+
+  .camwrap{position:relative;border-radius:12px;overflow:hidden;background:#000;
+           aspect-ratio:4/3;max-height:56vh}
+  .camwrap video,.camwrap canvas{position:absolute;inset:0;width:100%;height:100%;object-fit:cover}
+  .camwrap video{transform:scaleX(-1)}
+  .camwrap canvas{transform:scaleX(-1)}
+
+  .issues{list-style:none;padding:0;margin:12px 0 0}
+  .issues li{padding:9px 12px;border-radius:8px;background:#2a1614;border:1px solid #4a2320;
+             color:#f0a49c;font-size:.88rem;margin-bottom:7px}
+  .issues li.clean{background:#132419;border-color:#20452e;color:#8fd9b3}
+
+  .metrics{display:grid;grid-template-columns:repeat(auto-fit,minmax(88px,1fr));gap:8px;margin-top:13px}
+  .metrics div{background:var(--panel-2);border-radius:8px;padding:9px;text-align:center}
+  .metrics b{display:block;font-family:var(--mono);font-size:1.1rem}
+  .metrics span{font-size:.68rem;color:var(--muted)}
+
+  .slider{display:flex;align-items:center;gap:10px;margin-top:10px}
+  .slider input{flex:1;accent-color:var(--brand)}
+  .slider output{font-family:var(--mono);font-size:.77rem;color:var(--ink-2);min-width:44px;text-align:right}
+
+  .log{font-family:var(--mono);font-size:.71rem;color:var(--ink-2);background:var(--ground);
+       border:1px solid var(--line);border-radius:8px;padding:10px;max-height:180px;overflow:auto;
+       white-space:pre;margin-top:9px}
+  [hidden]{display:none !important}
+  details summary{cursor:pointer;font-weight:700;font-size:.92rem}
+  a{color:var(--brand)}
 </style>
 </head>
 <body>
 <div class="wrap">
 
-  <h1>吉他練習回饋 · M0</h1>
-  <p class="sub">用聽的判斷和弦按對沒有 —— 不用鏡頭，不受角度與遮擋影響。</p>
+  <h1>吉他練習回饋</h1>
+  <p class="sub">聽你彈得對不對，看你姿勢對不對。全部在瀏覽器裡跑，影像與聲音不會離開你的裝置。</p>
 
-  <div class="bar">
-    <button id="start" class="primary">開始聆聽</button>
-    <button id="stop" disabled>停止</button>
-    <button id="demo">播放合成 Em（不用吉他也能測）</button>
-    <span id="status" class="status">尚未啟動</span>
+  <div class="tabs" role="tablist">
+    <button id="tabEar"  role="tab" aria-selected="true"  aria-controls="paneEar">🎧 聽力（和弦）</button>
+    <button id="tabEye"  role="tab" aria-selected="false" aria-controls="paneEye">👁 姿勢（左手）</button>
+    <button id="tabBoth" role="tab" aria-selected="false" aria-controls="paneBoth">🎯 合併練習</button>
   </div>
 
-  <div class="stage">
-    <div class="target">
-      <label for="want">練習目標</label>
-      <select id="want"></select>
-      <span id="wantNotes" class="status"></span>
+  <!-- ═══════════ 聽力 ═══════════ -->
+  <section id="paneEar" role="tabpanel">
+    <div class="bar">
+      <button id="aStart" class="primary">開始聆聽</button>
+      <button id="aStop" disabled>停止</button>
+      <button id="aDemo">播放合成 Em</button>
+      <label class="hint"><input type="checkbox" id="speak1" /> 語音回饋</label>
+      <span id="aStatus" class="hint">尚未啟動</span>
     </div>
 
-    <div class="readout">
-      <div>
-        <div id="heard" class="heard wait">—</div>
-        <div id="verdict" class="verdict" style="color:var(--muted)">等待聲音</div>
-        <div id="detail" class="detail">分數 —　領先 —</div>
-      </div>
-      <div style="min-width:190px">
-        <table>
-          <thead><tr><th>可能的和弦</th><th style="text-align:right">相似度</th></tr></thead>
-          <tbody id="ranked"><tr><td colspan="2" style="color:var(--muted)">—</td></tr></tbody>
-        </table>
-      </div>
+    <div class="card">
+      <div class="lbl">練習目標</div>
+      <div class="targets" id="targets"></div>
+      <div class="hint" id="wantNotes" style="margin-top:8px"></div>
     </div>
 
-    <div class="meter"><i id="level"></i></div>
+    <div class="card">
+      <div class="main">
+        <div>
+          <div id="big" class="big wait">—</div>
+          <div id="say" class="say" style="color:var(--muted)">按「開始聆聽」</div>
+          <div id="nums" class="nums">分數 —　領先 —　穩定 —</div>
+          <div class="rowmeter"><span class="lbl">音量</span><div class="track"><i id="vol" class="vol"></i></div></div>
+          <div class="rowmeter"><span class="lbl">穩定度</span><div class="track"><i id="hold" class="hold"></i></div></div>
+        </div>
+        <div>
+          <table class="rank">
+            <thead><tr><th>最像的</th><th style="text-align:right">相似度</th></tr></thead>
+            <tbody id="rank"><tr><td colspan="2" style="color:var(--muted)">—</td></tr></tbody>
+          </table>
+        </div>
+      </div>
+      <div class="chroma" id="chroma"></div>
+    </div>
 
-    <div class="chroma" id="chroma"></div>
+    <div class="card">
+      <h2>靈敏度</h2>
+      <p class="note" style="margin:0">真吉他比合成音難判。太少判定往左調，亂跳往右調。</p>
+      <div class="slider"><span class="lbl">門檻</span>
+        <input id="thr" type="range" min="0.60" max="0.92" step="0.01" value="0.75" /><output id="thrOut">0.75</output></div>
+      <div class="slider"><span class="lbl">要穩幾幀</span>
+        <input id="hold2" type="range" min="1" max="12" step="1" value="5" /><output id="hold2Out">5</output></div>
+    </div>
+  </section>
+
+  <!-- ═══════════ 姿勢 ═══════════ -->
+  <section id="paneEye" role="tabpanel" hidden>
+    <div class="bar">
+      <button id="vStart" class="primary">開啟鏡頭</button>
+      <button id="vStop" disabled>停止</button>
+      <label class="hint"><input type="checkbox" id="speak2" /> 語音回饋</label>
+      <span id="vStatus" class="hint">尚未啟動</span>
+    </div>
+
+    <div class="card warn">
+      <p class="note" style="margin:0">
+        <b>⚠ 這裡的門檻是暫定值，不是教學標準。</b>
+        程式算得出「食指 PIP 是 168°」，但「168° 該不該提醒」是教學判斷 ——
+        那要你用真實學生的手校準過才有意義。下面的滑桿就是給你調的。
+      </p>
+    </div>
+
+    <div class="card">
+      <div class="camwrap"><video id="cam" playsinline muted></video><canvas id="draw"></canvas></div>
+      <ul class="issues" id="issues"><li class="clean">尚未偵測</li></ul>
+      <div class="metrics" id="metrics"></div>
+    </div>
+
+    <div class="card">
+      <h2>門檻校準</h2>
+      <div class="slider"><span class="lbl">手指太平</span>
+        <input id="flat" type="range" min="120" max="178" step="1" value="155" /><output id="flatOut">155°</output></div>
+      <div class="slider"><span class="lbl">拇指越頸</span>
+        <input id="thumb" type="range" min="-0.05" max="0.12" step="0.005" value="0.02" /><output id="thumbOut">0.020</output></div>
+      <p class="note" style="margin:10px 0 0">
+        調到「你覺得該提醒的時候它才提醒」，然後把數字告訴我，我寫進預設值。
+      </p>
+    </div>
+
+    <div class="card">
+      <h2>目前還做不到</h2>
+      <p class="note" style="margin:0" id="cannot"></p>
+    </div>
+  </section>
+
+  <!-- ═══════════ 合併 ═══════════ -->
+  <section id="paneBoth" role="tabpanel" hidden>
+    <div class="bar">
+      <button id="bStart" class="primary">開始練習</button>
+      <button id="bStop" disabled>停止</button>
+      <label class="hint"><input type="checkbox" id="speak3" checked /> 語音回饋</label>
+      <span id="bStatus" class="hint">尚未啟動</span>
+    </div>
+    <div class="card">
+      <p class="note" style="margin:0 0 10px">
+        同時聽聲音與看姿勢。<b>兩個都對才算過一關</b>，過了自動換下一個和弦。
+      </p>
+      <div class="main">
+        <div>
+          <div class="lbl">現在練</div>
+          <div id="bTarget" class="big wait">—</div>
+          <div id="bSay" class="say" style="color:var(--muted)">按「開始練習」</div>
+          <div class="rowmeter"><span class="lbl">聲音</span><div class="track"><i id="bEar" class="hold"></i></div></div>
+          <div class="rowmeter"><span class="lbl">姿勢</span><div class="track"><i id="bEye" class="hold"></i></div></div>
+        </div>
+        <div>
+          <div class="lbl">通過</div>
+          <div id="bScore" class="big" style="font-size:2.4rem;color:var(--ok)">0</div>
+          <div class="hint" id="bList" style="margin-top:6px">—</div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <div class="card">
+    <h2>實測紀錄</h2>
+    <p class="note" style="margin:0">彈幾分鐘，按「複製紀錄」貼回對話，我拿真實數據調門檻。</p>
+    <div class="bar" style="margin:9px 0 0">
+      <button id="copy">複製紀錄</button><button id="clear">清空</button>
+      <span class="hint" id="logCount">0 筆</span>
+    </div>
+    <div class="log" id="log">（還沒有紀錄）</div>
   </div>
 
-  <div class="note">
-    <b>怎麼用：</b>按「開始聆聽」允許麥克風，選一個目標和弦，對著手機/電腦刷弦，讓它響滿一拍。
-    綠色代表聽到的跟目標一致。<br><br>
-    <b>沒有吉他也能驗證：</b>按「播放合成 Em」，程式會自己合成一個帶泛音的 Em 和弦播出來，
-    麥克風收到後應該判定為 Em。<br><br>
-    <b>下方 12 個柱子</b>是 chroma —— 目前聽到的十二個音級各有多少能量。
-    綠色柱子是目標和弦「應該」出現的音。看柱子比看結論更能理解它為什麼這樣判。
-  </div>
+  <details class="card">
+    <summary>它在做什麼 / 為什麼這樣設計</summary>
+    <p class="note" style="margin-top:11px"><b>聽力：</b>麥克風 → FFT → 每個頻率折算成十二音級之一並累加能量（chroma）
+      → 跟各和弦範本算餘弦相似度 → 最像的就是答案。</p>
+    <p class="note"><b>為什麼看「領先」比看「分數」重要：</b>C 和 Am 共用兩個音，兩者分數都會偏高。
+      真正代表「我確定」的是第一名跟第二名的差距。</p>
+    <p class="note"><b>姿勢：</b>MediaPipe 抓 21 個手部關鍵點，只算<b>關節之間的相對角度</b>。
+      刻意不去判斷「按在第幾弦第幾格」—— 那需要先偵測琴頸位置、處理相機角度與遮擋，是研究等級的題目。
+      相對角度完全避開那些問題。</p>
+    <p class="note" style="margin-bottom:0"><b>隱私：</b>影像與聲音都在你的瀏覽器裡處理，沒有任何資料上傳。
+      原始碼：<a href="https://github.com/a0936480350/guitar-coach" target="_blank" rel="noopener">github.com/a0936480350/guitar-coach</a></p>
+  </details>
 
 </div>
 
 <script type="module">
-import { computeChroma, identify, chordNotes, CHORD_TEMPLATES, NOTE_NAMES }
-  from './src/chroma.js';
+import { computeChroma, identify, chordNotes, CHORD_TEMPLATES, NOTE_NAMES } from './src/chroma.js';
+import { analyse, DEFAULT_RULES, WRIST_ANGLE_UNAVAILABLE, LM } from './src/posture.js';
 
 const $ = id => document.getElementById(id);
 const FFT = 8192;
+$('cannot').textContent = WRIST_ANGLE_UNAVAILABLE;
 
-// ── 目標和弦下拉 ──────────────────────────────────────────────────────────────
-const want = $('want');
-for (const name of Object.keys(CHORD_TEMPLATES)) {
-  const o = document.createElement('option');
-  o.value = o.textContent = name;
-  want.appendChild(o);
+// ═══ 分頁 ═══
+const panes = { tabEar:'paneEar', tabEye:'paneEye', tabBoth:'paneBoth' };
+Object.keys(panes).forEach(t => $(t).addEventListener('click', () => {
+  Object.entries(panes).forEach(([tab,pane]) => {
+    const on = tab === t;
+    $(tab).setAttribute('aria-selected', String(on));
+    $(pane).hidden = !on;
+  });
+}));
+
+// ═══ 語音回饋 ═══
+let lastSpoke = 0, lastSpokeText = '';
+function speak(text, on){
+  if (!on || !('speechSynthesis' in window)) return;
+  const now = Date.now();
+  if (text === lastSpokeText && now - lastSpoke < 4000) return;   // 別碎念
+  if (now - lastSpoke < 1200) return;
+  lastSpoke = now; lastSpokeText = text;
+  speechSynthesis.cancel();
+  const u = new SpeechSynthesisUtterance(text);
+  u.lang = 'zh-TW'; u.rate = 1.05;
+  speechSynthesis.speak(u);
 }
-want.value = 'Em';
 
-// ── chroma 柱狀圖 ────────────────────────────────────────────────────────────
-const chromaEl = $('chroma');
-const cols = [], lbls = [];
-NOTE_NAMES.forEach(n => {
-  const wrap = document.createElement('div');
-  const col = document.createElement('div'); col.className = 'col';
-  const fill = document.createElement('i');
-  col.appendChild(fill);
-  const lbl = document.createElement('span'); lbl.className = 'lbl'; lbl.textContent = n;
-  wrap.append(col, lbl);
-  chromaEl.appendChild(wrap);
-  cols.push({ col, fill }); lbls.push(lbl);
+// ═══ 紀錄 ═══
+const rows = [];
+function logIt(line){
+  rows.push(`${new Date().toTimeString().slice(0,8)}  ${line}`);
+  if (rows.length > 500) rows.shift();
+  $('log').textContent = rows.slice(-40).join('\n');
+  $('log').scrollTop = 1e6;
+  $('logCount').textContent = rows.length + ' 筆';
+}
+$('clear').addEventListener('click', () => {
+  rows.length = 0; $('log').textContent='（還沒有紀錄）'; $('logCount').textContent='0 筆';
+});
+$('copy').addEventListener('click', async () => {
+  const head = `吉他練習回饋 · 實測紀錄\n和弦門檻=${MIN_SCORE.toFixed(2)} 需穩=${NEED_HOLD}幀 `
+    + `手指太平>${RULES.fingerTooFlat}° 拇指越頸>${RULES.thumbOverSide}\n`
+    + `取樣率=${sr||'?'}Hz  共 ${rows.length} 筆\n${'-'.repeat(60)}\n`;
+  const text = head + rows.join('\n');
+  try { await navigator.clipboard.writeText(text); $('copy').textContent='已複製'; }
+  catch { $('log').textContent = text; $('copy').textContent='已顯示於下方，請手動選取'; }
+  setTimeout(()=>$('copy').textContent='複製紀錄', 2200);
 });
 
-function paintTarget() {
-  const wanted = new Set(chordNotes(want.value));
-  cols.forEach(({ col }, i) => col.classList.toggle('want', wanted.has(NOTE_NAMES[i])));
-  lbls.forEach((l, i) => l.classList.toggle('want', wanted.has(NOTE_NAMES[i])));
-  $('wantNotes').textContent = '應含 ' + chordNotes(want.value).join(' · ');
+// ═══════════════ 聽力 ═══════════════
+let target = 'Em';
+const chips = {};
+Object.keys(CHORD_TEMPLATES).forEach(name => {
+  const b = document.createElement('button');
+  b.className='chip'; b.textContent=name; b.type='button';
+  b.setAttribute('aria-pressed', String(name===target));
+  b.addEventListener('click', () => {
+    target = name;
+    Object.entries(chips).forEach(([n,el])=>el.setAttribute('aria-pressed',String(n===name)));
+    paintTarget(); resetHold();
+  });
+  chips[name]=b; $('targets').appendChild(b);
+});
+const cols=[], labels=[];
+NOTE_NAMES.forEach(n => {
+  const w=document.createElement('div');
+  const c=document.createElement('div'); c.className='col';
+  const f=document.createElement('i'); c.appendChild(f);
+  const s=document.createElement('span'); s.textContent=n;
+  w.append(c,s); $('chroma').appendChild(w); cols.push({col:c,fill:f}); labels.push(s);
+});
+function paintTarget(){
+  const want=new Set(chordNotes(target));
+  cols.forEach(({col},i)=>col.classList.toggle('want',want.has(NOTE_NAMES[i])));
+  labels.forEach((s,i)=>s.classList.toggle('want',want.has(NOTE_NAMES[i])));
+  $('wantNotes').textContent = `${target} 應含 ${chordNotes(target).join(' · ')}`;
 }
-want.addEventListener('change', paintTarget);
 paintTarget();
 
-// ── 音訊 ─────────────────────────────────────────────────────────────────────
-let ctx = null, analyser = null, stream = null, raf = 0;
+let MIN_SCORE=0.75, NEED_HOLD=5;
+$('thr').addEventListener('input',e=>{MIN_SCORE=+e.target.value;$('thrOut').textContent=MIN_SCORE.toFixed(2);});
+$('hold2').addEventListener('input',e=>{NEED_HOLD=+e.target.value;$('hold2Out').textContent=NEED_HOLD;});
 
-async function start() {
-  try {
-    stream = await navigator.mediaDevices.getUserMedia({
-      audio: { echoCancellation: false, noiseSuppression: false, autoGainControl: false }
-    });
-  } catch (e) {
-    $('status').textContent = '麥克風被拒絕或無法使用：' + e.name;
-    return;
-  }
-  ctx = new (window.AudioContext || window.webkitAudioContext)();
-  analyser = ctx.createAnalyser();
-  analyser.fftSize = FFT;
-  analyser.smoothingTimeConstant = 0.6;
-  ctx.createMediaStreamSource(stream).connect(analyser);
+let actx=null, analyser=null, micStream=null, araf=0, sr=0;
+let holdCount=0, holdChord=null, lastLogged=null;
+let earOK=false;   // 給合併模式讀
+function resetHold(){holdCount=0;holdChord=null;lastLogged=null;earOK=false;$('hold').style.width='0%';}
 
-  $('start').disabled = true; $('stop').disabled = false;
-  $('status').textContent = `聆聽中 · ${ctx.sampleRate}Hz · FFT ${FFT}`;
-  loop();
+async function audioStart(){
+  if(!navigator.mediaDevices?.getUserMedia){$('aStatus').textContent='此瀏覽器不支援麥克風';return false;}
+  try{
+    micStream = await navigator.mediaDevices.getUserMedia({
+      audio:{echoCancellation:false,noiseSuppression:false,autoGainControl:false}});
+  }catch(e){$('aStatus').textContent='麥克風被拒絕：'+e.name;return false;}
+  actx = new (window.AudioContext||window.webkitAudioContext)();
+  if(actx.state==='suspended') await actx.resume();
+  sr = actx.sampleRate;
+  analyser = actx.createAnalyser();
+  analyser.fftSize=FFT; analyser.smoothingTimeConstant=0.55;
+  actx.createMediaStreamSource(micStream).connect(analyser);
+  $('aStart').disabled=true; $('aStop').disabled=false;
+  $('aStatus').textContent=`聆聽中 · ${sr}Hz`;
+  resetHold(); audioLoop(); return true;
 }
-
-function stop() {
-  cancelAnimationFrame(raf);
-  if (stream) stream.getTracks().forEach(t => t.stop());
-  if (ctx) ctx.close();
-  ctx = analyser = stream = null;
-  $('start').disabled = false; $('stop').disabled = true;
-  $('status').textContent = '已停止';
-  $('heard').textContent = '—'; $('heard').className = 'heard wait';
-  $('verdict').textContent = '等待聲音'; $('verdict').style.color = 'var(--muted)';
+function audioStop(){
+  cancelAnimationFrame(araf);
+  if(micStream) micStream.getTracks().forEach(t=>t.stop());
+  if(actx) actx.close();
+  actx=analyser=micStream=null;
+  $('aStart').disabled=false; $('aStop').disabled=true; $('aStatus').textContent='已停止';
+  $('big').textContent='—'; $('big').className='big wait';
+  $('say').textContent='已停止'; $('say').style.color='var(--muted)';
+  cols.forEach(c=>c.fill.style.height='0%'); $('vol').style.width='0%'; resetHold();
 }
-
-const spec = new Float32Array(FFT / 2);
-
-function loop() {
-  raf = requestAnimationFrame(loop);
+let spec=null;
+function audioLoop(){
+  araf=requestAnimationFrame(audioLoop);
+  if(!analyser) return;
+  if(!spec||spec.length!==analyser.frequencyBinCount) spec=new Float32Array(analyser.frequencyBinCount);
   analyser.getFloatFrequencyData(spec);
-
-  // dB → 線性振幅；-100dB 以下當雜訊丟掉
-  const mag = new Float32Array(spec.length);
-  let energy = 0;
-  for (let i = 0; i < spec.length; i++) {
-    const v = spec[i] > -100 ? Math.pow(10, spec[i] / 20) : 0;
-    mag[i] = v; energy += v;
+  const mag=new Float32Array(spec.length); let energy=0;
+  for(let i=0;i<spec.length;i++){const v=spec[i]>-100?Math.pow(10,spec[i]/20):0;mag[i]=v;energy+=v;}
+  $('vol').style.width=Math.min(100,energy*2200)+'%';
+  if(energy<0.014){
+    $('big').textContent='—'; $('big').className='big wait';
+    $('say').textContent='太安靜 — 刷一下和弦'; $('say').style.color='var(--muted)';
+    cols.forEach(c=>c.fill.style.height='0%'); resetHold(); return;
   }
-
-  $('level').style.width = Math.min(100, energy * 2200) + '%';
-
-  // 太安靜就不判斷 —— 免得對著空氣亂猜
-  if (energy < 0.014) {
-    $('heard').textContent = '—'; $('heard').className = 'heard wait';
-    $('verdict').textContent = '太安靜，彈一下'; $('verdict').style.color = 'var(--muted)';
-    cols.forEach(c => c.fill.style.height = '0%');
-    return;
-  }
-
-  const chroma = computeChroma(mag, ctx.sampleRate, FFT);
-  cols.forEach((c, i) => c.fill.style.height = (chroma[i] * 100).toFixed(1) + '%');
-
-  const r = identify(chroma);
-  const target = want.value;
-
-  const heard = $('heard'), verdict = $('verdict');
-  if (!r.confident) {
-    heard.textContent = r.chord + '?'; heard.className = 'heard wait';
-    verdict.textContent = '聽不確定 — 讓和弦響久一點';
-    verdict.style.color = 'var(--wait)';
-  } else if (r.chord === target) {
-    heard.textContent = r.chord; heard.className = 'heard ok';
-    verdict.textContent = '正確';
-    verdict.style.color = 'var(--ok)';
+  const ch=computeChroma(mag,sr,FFT);
+  cols.forEach((c,i)=>c.fill.style.height=(ch[i]*100).toFixed(1)+'%');
+  const r=identify(ch);
+  $('rank').innerHTML=r.ranked.map(x=>`<tr><td>${x.chord}</td><td>${x.score.toFixed(3)}</td></tr>`).join('');
+  if(r.chord===holdChord) holdCount++; else {holdChord=r.chord;holdCount=1;}
+  $('hold').style.width=Math.min(100,(holdCount/NEED_HOLD)*100)+'%';
+  $('bEar').style.width=$('hold').style.width;
+  const settled = holdCount>=NEED_HOLD && r.score>=MIN_SCORE;
+  earOK = settled && r.chord===target;
+  const big=$('big'), say=$('say');
+  if(!settled){
+    big.textContent=r.chord; big.className='big hold';
+    say.textContent = r.score<MIN_SCORE ? '還不確定 — 讓和弦響久一點' : '判定中…';
+    say.style.color='var(--wait)';
+  } else if(r.chord===target){
+    big.textContent=r.chord; big.className='big ok';
+    say.textContent='正確'; say.style.color='var(--ok)';
+    if(lastLogged!==r.chord){logIt(`聽力 目標=${target} 聽到=${r.chord} ✓ 分數=${r.score.toFixed(3)} 領先=${r.margin.toFixed(3)}`);lastLogged=r.chord;
+      speak('對了', $('speak1').checked);}
   } else {
-    heard.textContent = r.chord; heard.className = 'heard bad';
-    verdict.textContent = `聽起來像 ${r.chord}，目標是 ${target}`;
-    verdict.style.color = 'var(--bad)';
+    big.textContent=r.chord; big.className='big bad';
+    say.textContent=`聽起來像 ${r.chord}，目標是 ${target}`; say.style.color='var(--bad)';
+    if(lastLogged!==r.chord){logIt(`聽力 目標=${target} 聽到=${r.chord} ✗ 分數=${r.score.toFixed(3)} 領先=${r.margin.toFixed(3)}`);lastLogged=r.chord;
+      speak(`聽起來像 ${r.chord}`, $('speak1').checked);}
   }
-  $('detail').textContent =
-    `分數 ${r.score.toFixed(3)}　領先 ${r.margin.toFixed(3)}`;
-
-  $('ranked').innerHTML = r.ranked.map(x =>
-    `<tr><td>${x.chord}</td><td style="text-align:right">${x.score.toFixed(3)}</td></tr>`
-  ).join('');
+  $('nums').textContent=`分數 ${r.score.toFixed(3)}　領先 ${r.margin.toFixed(3)}　穩定 ${holdCount}/${NEED_HOLD}`;
 }
+function demo(){
+  const a=new (window.AudioContext||window.webkitAudioContext)();
+  const f=[82.41,123.47,164.81,196.00,246.94,329.63];
+  const t0=a.currentTime+0.05;
+  f.forEach((freq,i)=>{for(let h=1;h<=4;h++){
+    const o=a.createOscillator(),g=a.createGain();
+    o.frequency.value=freq*h; const s=t0+i*0.012;
+    g.gain.setValueAtTime(0,s); g.gain.linearRampToValueAtTime(0.16/(h*h),s+0.01);
+    g.gain.exponentialRampToValueAtTime(0.0001,s+2.6);
+    o.connect(g);g.connect(a.destination);o.start(s);o.stop(s+2.7);}});
+  setTimeout(()=>a.close(),3200);
+  $('aStatus').textContent = actx?'播放合成 Em — 應判定為 Em':'播放合成 Em（請先開始聆聽）';
+}
+$('aStart').addEventListener('click',audioStart);
+$('aStop').addEventListener('click',audioStop);
+$('aDemo').addEventListener('click',demo);
 
-// ── 合成測試音：不用吉他也能驗證整條鏈路 ──────────────────────────────────────
-function playDemo() {
-  const a = new (window.AudioContext || window.webkitAudioContext)();
-  const notes = [82.41, 123.47, 164.81, 196.00, 246.94, 329.63];  // Em: E2 B2 E3 G3 B3 E4
-  const now = a.currentTime;
-  notes.forEach((f, i) => {
-    for (let h = 1; h <= 4; h++) {
-      const osc = a.createOscillator(), g = a.createGain();
-      osc.frequency.value = f * h;
-      const t0 = now + i * 0.012;
-      g.gain.setValueAtTime(0, t0);
-      g.gain.linearRampToValueAtTime(0.16 / (h * h), t0 + 0.01);
-      g.gain.exponentialRampToValueAtTime(0.0001, t0 + 2.4);
-      osc.connect(g); g.connect(a.destination);
-      osc.start(t0); osc.stop(t0 + 2.5);
-    }
+// ═══════════════ 姿勢 ═══════════════
+const RULES = {...DEFAULT_RULES};
+$('flat').addEventListener('input',e=>{RULES.fingerTooFlat=+e.target.value;$('flatOut').textContent=RULES.fingerTooFlat+'°';});
+$('thumb').addEventListener('input',e=>{RULES.thumbOverSide=+e.target.value;$('thumbOut').textContent=RULES.thumbOverSide.toFixed(3);});
+
+let landmarker=null, camStream=null, vraf=0, lastVideoTime=-1;
+let eyeOK=false, lastIssueKey='';
+
+async function loadModel(){
+  if(landmarker) return landmarker;
+  $('vStatus').textContent='載入模型中…';
+  const { HandLandmarker, FilesetResolver } =
+    await import('https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.14');
+  const fileset = await FilesetResolver.forVisionTasks(
+    'https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.14/wasm');
+  landmarker = await HandLandmarker.createFromOptions(fileset,{
+    baseOptions:{ modelAssetPath:
+      'https://storage.googleapis.com/mediapipe-models/hand_landmarker/hand_landmarker/float16/1/hand_landmarker.task',
+      delegate:'GPU' },
+    runningMode:'VIDEO', numHands:2,
   });
-  setTimeout(() => a.close(), 3000);
-  $('status').textContent = '播放合成 Em 中 — 麥克風應判定為 Em';
+  return landmarker;
 }
+async function visionStart(){
+  try{ await loadModel(); }
+  catch(e){ $('vStatus').textContent='模型載入失敗：'+e.message; return false; }
+  try{
+    camStream = await navigator.mediaDevices.getUserMedia({
+      video:{facingMode:'user', width:{ideal:960}, height:{ideal:720}}});
+  }catch(e){ $('vStatus').textContent='鏡頭被拒絕：'+e.name; return false; }
+  const v=$('cam'); v.srcObject=camStream; await v.play();
+  const c=$('draw'); c.width=v.videoWidth||960; c.height=v.videoHeight||720;
+  $('vStart').disabled=true; $('vStop').disabled=false;
+  $('vStatus').textContent=`偵測中 · ${c.width}x${c.height}`;
+  visionLoop(); return true;
+}
+function visionStop(){
+  cancelAnimationFrame(vraf);
+  if(camStream) camStream.getTracks().forEach(t=>t.stop());
+  camStream=null; $('cam').srcObject=null;
+  $('vStart').disabled=false; $('vStop').disabled=true; $('vStatus').textContent='已停止';
+  $('issues').innerHTML='<li class="clean">已停止</li>'; $('metrics').innerHTML='';
+  eyeOK=false; $('bEye').style.width='0%';
+  const c=$('draw'); c.getContext('2d').clearRect(0,0,c.width,c.height);
+}
+const BONES=[[0,1],[1,2],[2,3],[3,4],[0,5],[5,6],[6,7],[7,8],[0,9],[9,10],[10,11],[11,12],
+             [0,13],[13,14],[14,15],[15,16],[0,17],[17,18],[18,19],[19,20],[5,9],[9,13],[13,17]];
+function visionLoop(){
+  vraf=requestAnimationFrame(visionLoop);
+  const v=$('cam');
+  if(!landmarker||!v.videoWidth) return;
+  if(v.currentTime===lastVideoTime) return;
+  lastVideoTime=v.currentTime;
 
-$('start').addEventListener('click', start);
-$('stop').addEventListener('click', stop);
-$('demo').addEventListener('click', playDemo);
+  let res;
+  try{ res = landmarker.detectForVideo(v, performance.now()); }catch{ return; }
+
+  const c=$('draw'), g=c.getContext('2d');
+  g.clearRect(0,0,c.width,c.height);
+
+  if(!res.landmarks?.length){
+    $('issues').innerHTML='<li class="clean">沒偵測到手 — 讓左手進入畫面</li>';
+    $('metrics').innerHTML=''; eyeOK=false; $('bEye').style.width='0%'; return;
+  }
+
+  // 取最左邊那隻手當按弦手（鏡像後畫面上的左側）
+  const hand = res.landmarks.reduce((a,b)=>
+    (a.reduce((s,p)=>s+p.x,0)/a.length) < (b.reduce((s,p)=>s+p.x,0)/b.length) ? a : b);
+
+  g.lineWidth=3; g.strokeStyle='rgba(95,168,211,.85)';
+  BONES.forEach(([a,b])=>{g.beginPath();
+    g.moveTo(hand[a].x*c.width,hand[a].y*c.height);
+    g.lineTo(hand[b].x*c.width,hand[b].y*c.height); g.stroke();});
+  g.fillStyle='#4ec98a';
+  hand.forEach(p=>{g.beginPath();g.arc(p.x*c.width,p.y*c.height,4,0,7);g.fill();});
+
+  const a = analyse(hand, RULES);
+  eyeOK = a.ok && a.issues.length===0;
+  $('bEye').style.width = eyeOK?'100%':'25%';
+
+  $('issues').innerHTML = a.issues.length
+    ? a.issues.map(i=>`<li>${i.text}</li>`).join('')
+    : '<li class="clean">姿勢沒有明顯問題</li>';
+
+  const key = a.issues.map(i=>i.code).join('|');
+  if(key && key!==lastIssueKey){
+    logIt(`姿勢 ${a.issues.map(i=>i.text).join('；')}`);
+    speak(a.issues[0].text.split('（')[0], $('speak2').checked);
+    lastIssueKey=key;
+  } else if(!key) lastIssueKey='';
+
+  if(a.metrics){
+    $('metrics').innerHTML = a.metrics.curls.map(cu=>
+      `<div><b>${Number.isFinite(cu.pip)?cu.pip.toFixed(0)+'°':'—'}</b><span>${cu.name} PIP</span></div>`).join('')
+      + `<div><b>${a.metrics.thumb.side.toFixed(3)}</b><span>拇指位置</span></div>`
+      + `<div><b>${Number.isFinite(a.metrics.spread)?a.metrics.spread.toFixed(2):'—'}</b><span>手掌張開</span></div>`;
+  }
+}
+$('vStart').addEventListener('click',visionStart);
+$('vStop').addEventListener('click',visionStop);
+
+// ═══════════════ 合併練習 ═══════════════
+const SEQ=['Em','Am','G','C','D'];
+let seqIdx=0, passed=[], braf=0, running=false;
+function bUpdate(){
+  $('bTarget').textContent = SEQ[seqIdx];
+  $('bList').textContent = passed.length ? passed.join(' → ') : '—';
+  $('bScore').textContent = passed.length;
+}
+async function bothStart(){
+  const a = await audioStart(); const v = await visionStart();
+  if(!a && !v){ $('bStatus').textContent='麥克風與鏡頭都無法啟動'; return; }
+  running=true; seqIdx=0; passed=[]; bUpdate();
+  target=SEQ[seqIdx];
+  Object.entries(chips).forEach(([n,el])=>el.setAttribute('aria-pressed',String(n===target)));
+  paintTarget();
+  $('bStart').disabled=true; $('bStop').disabled=false;
+  $('bStatus').textContent='練習中';
+  speak(`請彈 ${SEQ[seqIdx]}`, $('speak3').checked);
+  bothLoop();
+}
+function bothStop(){
+  running=false; cancelAnimationFrame(braf);
+  audioStop(); visionStop();
+  $('bStart').disabled=false; $('bStop').disabled=true; $('bStatus').textContent='已停止';
+  $('bSay').textContent='已停止'; $('bSay').style.color='var(--muted)';
+}
+let passHold=0;
+function bothLoop(){
+  braf=requestAnimationFrame(bothLoop);
+  if(!running) return;
+  const both = earOK && eyeOK;
+  if(both) passHold++; else passHold=0;
+  const say=$('bSay');
+  if(both){ say.textContent='聲音與姿勢都對'; say.style.color='var(--ok)'; }
+  else if(earOK){ say.textContent='聲音對了，看一下姿勢'; say.style.color='var(--wait)'; }
+  else if(eyeOK){ say.textContent='姿勢可以，聲音還不對'; say.style.color='var(--wait)'; }
+  else { say.textContent='彈彈看'; say.style.color='var(--muted)'; }
+
+  if(passHold>=25){    // 約 0.4 秒都維持住才算過
+    passed.push(SEQ[seqIdx]);
+    logIt(`合併 ${SEQ[seqIdx]} 通過（聲音+姿勢）`);
+    speak('過關', $('speak3').checked);
+    seqIdx=(seqIdx+1)%SEQ.length; passHold=0;
+    target=SEQ[seqIdx];
+    Object.entries(chips).forEach(([n,el])=>el.setAttribute('aria-pressed',String(n===target)));
+    paintTarget(); resetHold(); bUpdate();
+    setTimeout(()=>speak(`請彈 ${SEQ[seqIdx]}`, $('speak3').checked), 900);
+  }
+}
+$('bStart').addEventListener('click',bothStart);
+$('bStop').addEventListener('click',bothStop);
+bUpdate();
+
+// ═══ 核心自我檢查 ═══
+(() => {
+  const v=new Array(12).fill(0);[4,7,11].forEach(i=>v[i]=1);
+  const t=identify(v);
+  if(t.chord!=='Em'||t.score<0.999) $('aStatus').textContent='⚠ 和弦核心自我檢查失敗：'+t.chord;
+})();
 </script>
 </body>
 </html>

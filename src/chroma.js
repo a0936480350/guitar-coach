@@ -14,13 +14,58 @@ export const NOTE_NAMES = ['C', 'C#', 'D', 'D#', 'E', 'F', 'F#', 'G', 'G#', 'A',
  * 只放吉他初學最常用的開放和弦 —— 範圍小，辨識才準。
  * 這是刻意的：辨識 24 個和弦的準確率遠低於辨識 8 個。
  */
-export const CHORD_TEMPLATES = buildTemplates({
-  // 大三和弦：根音、大三度(+4)、純五度(+7)
-  'C':  [0, 4, 7],   'D':  [2, 6, 9],   'E':  [4, 8, 11],
-  'F':  [5, 9, 0],   'G':  [7, 11, 2],  'A':  [9, 1, 4],
-  // 小三和弦：根音、小三度(+3)、純五度(+7)
-  'Am': [9, 0, 4],   'Em': [4, 7, 11],  'Dm': [2, 5, 9],
-});
+/**
+ * 和弦分級。**級別越高，和弦越多，準確率越低** —— 這是必然的取捨，
+ * 因為和弦一多，彼此共用的音就多，chroma 的區辨力會下降。
+ * 所以由使用者自己選，而不是預設全開。
+ */
+export const CHORD_SETS = {
+  basic: {
+    label: '初級 · 開放和弦',
+    note: '最準。9 個最常用的開放和弦。',
+    spec: {
+      'C':[0,4,7], 'D':[2,6,9], 'E':[4,8,11], 'F':[5,9,0], 'G':[7,11,2], 'A':[9,1,4],
+      'Am':[9,0,4], 'Em':[4,7,11], 'Dm':[2,5,9],
+    },
+  },
+  seventh: {
+    label: '中級 · 加七和弦',
+    note: '多了屬七與小七。七和弦多一個音，跟三和弦的區辨變難。',
+    spec: {
+      'C':[0,4,7], 'D':[2,6,9], 'E':[4,8,11], 'F':[5,9,0], 'G':[7,11,2], 'A':[9,1,4],
+      'Am':[9,0,4], 'Em':[4,7,11], 'Dm':[2,5,9],
+      'G7':[7,11,2,5], 'C7':[0,4,7,10], 'D7':[2,6,9,0], 'A7':[9,1,4,7], 'E7':[4,8,11,2],
+      'B7':[11,3,6,9],
+      'Am7':[9,0,4,7], 'Em7':[4,7,11,2], 'Dm7':[2,5,9,0],
+      'Cmaj7':[0,4,7,11], 'Fmaj7':[5,9,0,4], 'Gmaj7':[7,11,2,6],
+    },
+  },
+  full: {
+    label: '進階 · 含封閉與掛留',
+    note: '再加封閉和弦與 sus。**準確率會明顯下降**，只在安靜環境用。',
+    spec: {
+      'C':[0,4,7], 'D':[2,6,9], 'E':[4,8,11], 'F':[5,9,0], 'G':[7,11,2], 'A':[9,1,4],
+      'B':[11,3,6], 'Bb':[10,2,5],
+      'Am':[9,0,4], 'Em':[4,7,11], 'Dm':[2,5,9], 'Bm':[11,2,6], 'Cm':[0,3,7],
+      'F#m':[6,9,1], 'Gm':[7,10,2],
+      'G7':[7,11,2,5], 'C7':[0,4,7,10], 'D7':[2,6,9,0], 'A7':[9,1,4,7], 'E7':[4,8,11,2],
+      'B7':[11,3,6,9],
+      'Am7':[9,0,4,7], 'Em7':[4,7,11,2], 'Dm7':[2,5,9,0], 'Bm7':[11,2,6,9],
+      'Cmaj7':[0,4,7,11], 'Fmaj7':[5,9,0,4], 'Gmaj7':[7,11,2,6],
+      'Dsus4':[2,7,9], 'Asus4':[9,2,4], 'Esus4':[4,9,11], 'Dsus2':[2,4,9], 'Asus2':[9,11,4],
+    },
+  },
+};
+
+/** 目前使用的範本（預設初級）。用 setChordSet() 切換。 */
+export let CHORD_TEMPLATES = buildTemplates(CHORD_SETS.basic.spec);
+
+export function setChordSet(key) {
+  const set = CHORD_SETS[key];
+  if (!set) throw new Error(`未知的和弦組: ${key}`);
+  CHORD_TEMPLATES = buildTemplates(set.spec);
+  return CHORD_TEMPLATES;
+}
 
 function buildTemplates(spec) {
   const out = {};
@@ -123,4 +168,32 @@ export function chordNotes(chord, templates = CHORD_TEMPLATES) {
   const tpl = templates[chord];
   if (!tpl) return [];
   return tpl.map((v, i) => (v ? NOTE_NAMES[i] : null)).filter(Boolean);
+}
+
+/**
+ * 找出音級集合「完全相同」的和弦group。
+ *
+ * 例：Dsus2 = D·E·A，Asus4 = A·D·E —— 同一組音，只是根音不同。
+ * chroma 是十二音級的能量分布，**天生就丟掉了八度與低音資訊**，
+ * 所以這類和弦在原理上就分不出來，不是演算法沒調好。
+ *
+ * 誠實的做法是把它們一起回報，而不是硬選一個裝作有把握。
+ */
+export function ambiguityGroups(templates = CHORD_TEMPLATES) {
+  const byKey = {};
+  for (const [name, vec] of Object.entries(templates)) {
+    const key = vec.join('');
+    (byKey[key] ||= []).push(name);
+  }
+  return Object.values(byKey).filter(g => g.length > 1);
+}
+
+/** 這個和弦有哪些「聽起來完全一樣」的同伴（不含自己）。 */
+export function ambiguousWith(chord, templates = CHORD_TEMPLATES) {
+  const vec = templates[chord];
+  if (!vec) return [];
+  const key = vec.join('');
+  return Object.entries(templates)
+    .filter(([n, v]) => n !== chord && v.join('') === key)
+    .map(([n]) => n);
 }
