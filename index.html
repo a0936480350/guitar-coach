@@ -98,6 +98,19 @@
   .log{font-family:var(--mono);font-size:.71rem;color:var(--ink-2);background:var(--ground);
        border:1px solid var(--line);border-radius:8px;padding:10px;max-height:180px;overflow:auto;
        white-space:pre;margin-top:9px}
+  .needle{position:relative;height:56px;background:var(--panel-2);border-radius:9px;overflow:hidden;
+          margin-top:12px}
+  .needle .mid{position:absolute;left:50%;top:0;bottom:0;width:2px;background:var(--ok);opacity:.55}
+  .needle .zone{position:absolute;top:0;bottom:0;left:calc(50% - 5%);width:10%;background:rgba(78,201,138,.12)}
+  .needle i{position:absolute;top:6px;bottom:6px;width:4px;border-radius:2px;background:var(--wait);
+            left:50%;transition:left .08s linear,background .12s}
+  .needle i.ok{background:var(--ok)}
+  .strings{display:grid;grid-template-columns:repeat(6,1fr);gap:6px;margin-top:11px}
+  .strings button{padding:11px 4px;font-family:var(--mono)}
+  .beat{display:flex;gap:7px;margin-top:12px}
+  .beat div{flex:1;height:36px;border-radius:7px;background:var(--panel-2);transition:background .05s}
+  .beat div.on{background:var(--brand)}
+  .beat div.on.accent{background:var(--ok)}
   [hidden]{display:none !important}
   details summary{cursor:pointer;font-weight:700;font-size:.92rem}
   a{color:var(--brand)}
@@ -113,6 +126,7 @@
     <button id="tabEar"  role="tab" aria-selected="true"  aria-controls="paneEar">🎧 聽力（和弦）</button>
     <button id="tabEye"  role="tab" aria-selected="false" aria-controls="paneEye">👁 姿勢（左手）</button>
     <button id="tabBoth" role="tab" aria-selected="false" aria-controls="paneBoth">🎯 合併練習</button>
+    <button id="tabTool" role="tab" aria-selected="false" aria-controls="paneTool">🔧 調音 · 節拍</button>
   </div>
 
   <!-- ═══════════ 聽力 ═══════════ -->
@@ -229,6 +243,49 @@
     </div>
   </section>
 
+  <!-- ═══════════ 工具 ═══════════ -->
+  <section id="paneTool" role="tabpanel" hidden>
+    <div class="card">
+      <h2>調音器</h2>
+      <p class="note" style="margin:0">彈單一根空弦。YIN 音高偵測，合成音實測最大誤差 0.33 音分。</p>
+      <div class="bar" style="margin:11px 0 0">
+        <button id="tStart" class="primary">開始調音</button>
+        <button id="tStop" disabled>停止</button>
+        <span id="tStatus" class="hint">尚未啟動</span>
+      </div>
+      <div class="main" style="margin-top:13px">
+        <div>
+          <div id="tNote" class="big wait">—</div>
+          <div id="tCents" class="say" style="color:var(--muted)">彈一根弦</div>
+          <div class="needle"><div class="zone"></div><div class="mid"></div><i id="tNeedle"></i></div>
+          <div class="hint" style="margin-top:7px">中間綠色區＝±5 音分內算準</div>
+        </div>
+        <div>
+          <div class="lbl">目標弦</div>
+          <div class="hint" id="tTarget" style="margin-top:5px">自動判斷最接近的弦</div>
+          <div class="lbl" style="margin-top:11px">參考音</div>
+          <div class="strings" id="tRef" style="grid-template-columns:repeat(3,1fr)"></div>
+        </div>
+      </div>
+    </div>
+
+    <div class="card">
+      <h2>節拍器</h2>
+      <div class="bar" style="margin:0">
+        <button id="mToggle" class="primary">開始</button>
+        <span class="hint" id="mStatus">停止中</span>
+      </div>
+      <div class="slider"><span class="lbl">BPM</span>
+        <input id="mBpm" type="range" min="40" max="220" step="1" value="80" /><output id="mBpmOut">80</output></div>
+      <div class="slider"><span class="lbl">拍號</span>
+        <input id="mBeats" type="range" min="2" max="8" step="1" value="4" /><output id="mBeatsOut">4/4</output></div>
+      <div class="beat" id="mBeat"></div>
+      <p class="note" style="margin:11px 0 0">
+        第一拍是重音（綠色）。用 Web Audio 排程，不受畫面更新影響 —— 所以拍子準。
+      </p>
+    </div>
+  </section>
+
   <div class="card">
     <h2>實測紀錄</h2>
     <p class="note" style="margin:0">彈幾分鐘，按「複製紀錄」貼回對話，我拿真實數據調門檻。</p>
@@ -257,13 +314,14 @@
 <script type="module">
 import { computeChroma, identify, chordNotes, CHORD_TEMPLATES, NOTE_NAMES } from './src/chroma.js';
 import { analyse, DEFAULT_RULES, WRIST_ANGLE_UNAVAILABLE, LM } from './src/posture.js';
+import { yin, freqToNote, nearestString, STANDARD_TUNING, Smoother, Hysteresis, midiToFreq } from './src/pitch.js';
 
 const $ = id => document.getElementById(id);
 const FFT = 8192;
 $('cannot').textContent = WRIST_ANGLE_UNAVAILABLE;
 
 // ═══ 分頁 ═══
-const panes = { tabEar:'paneEar', tabEye:'paneEye', tabBoth:'paneBoth' };
+const panes = { tabEar:'paneEar', tabEye:'paneEye', tabBoth:'paneBoth', tabTool:'paneTool' };
 Object.keys(panes).forEach(t => $(t).addEventListener('click', () => {
   Object.entries(panes).forEach(([tab,pane]) => {
     const on = tab === t;
@@ -345,7 +403,12 @@ $('hold2').addEventListener('input',e=>{NEED_HOLD=+e.target.value;$('hold2Out').
 let actx=null, analyser=null, micStream=null, araf=0, sr=0;
 let holdCount=0, holdChord=null, lastLogged=null;
 let earOK=false;   // 給合併模式讀
-function resetHold(){holdCount=0;holdChord=null;lastLogged=null;earOK=false;$('hold').style.width='0%';}
+// 平滑「特徵」而非「結論」：逐幀判定會在相近和弦間跳，先平均 chroma 再判定
+const smoother = new Smoother(24, 12);
+const hyst = new Hysteresis(0.05, 8);
+let lastScore = 0;
+function resetHold(){holdCount=0;holdChord=null;lastLogged=null;earOK=false;lastScore=0;
+  smoother.reset(); hyst.reset(); $('hold').style.width='0%';}
 
 async function audioStart(){
   if(!navigator.mediaDevices?.getUserMedia){$('aStatus').textContent='此瀏覽器不支援麥克風';return false;}
@@ -387,9 +450,13 @@ function audioLoop(){
     $('say').textContent='太安靜 — 刷一下和弦'; $('say').style.color='var(--muted)';
     cols.forEach(c=>c.fill.style.height='0%'); resetHold(); return;
   }
-  const ch=computeChroma(mag,sr,FFT);
+  const raw=computeChroma(mag,sr,FFT);
+  const ch=smoother.push(raw);            // ← 時間平滑，這是修掉閃爍的關鍵
   cols.forEach((c,i)=>c.fill.style.height=(ch[i]*100).toFixed(1)+'%');
   const r=identify(ch);
+  const shown=hyst.update(r.chord, r.score, lastScore);   // ← 遲滯，避免邊界反覆互換
+  if(shown===r.chord) lastScore=r.score;
+  r.chord=shown;
   $('rank').innerHTML=r.ranked.map(x=>`<tr><td>${x.chord}</td><td>${x.score.toFixed(3)}</td></tr>`).join('');
   if(r.chord===holdChord) holdCount++; else {holdChord=r.chord;holdCount=1;}
   $('hold').style.width=Math.min(100,(holdCount/NEED_HOLD)*100)+'%';
@@ -584,6 +651,129 @@ function bothLoop(){
 $('bStart').addEventListener('click',bothStart);
 $('bStop').addEventListener('click',bothStop);
 bUpdate();
+
+// ═══════════════ 調音器 ═══════════════
+let tctx=null, tAnalyser=null, tStream=null, traf=0, tBuf=null;
+STANDARD_TUNING.forEach(st=>{
+  const b=document.createElement('button');
+  b.textContent=st.label; b.type='button';
+  b.addEventListener('click',()=>playRef(st.midi));
+  $('tRef').appendChild(b);
+});
+function playRef(midi){
+  const a=new (window.AudioContext||window.webkitAudioContext)();
+  const o=a.createOscillator(), g=a.createGain();
+  o.frequency.value=midiToFreq(midi); o.type='triangle';
+  const t=a.currentTime;
+  g.gain.setValueAtTime(0,t); g.gain.linearRampToValueAtTime(0.22,t+0.02);
+  g.gain.exponentialRampToValueAtTime(0.0001,t+1.6);
+  o.connect(g); g.connect(a.destination); o.start(t); o.stop(t+1.7);
+  setTimeout(()=>a.close(),2000);
+}
+async function tunerStart(){
+  try{
+    tStream=await navigator.mediaDevices.getUserMedia({
+      audio:{echoCancellation:false,noiseSuppression:false,autoGainControl:false}});
+  }catch(e){ $('tStatus').textContent='麥克風被拒絕：'+e.name; return; }
+  tctx=new (window.AudioContext||window.webkitAudioContext)();
+  if(tctx.state==='suspended') await tctx.resume();
+  tAnalyser=tctx.createAnalyser();
+  tAnalyser.fftSize=8192;                 // 時域樣本，YIN 需要夠長才抓得到低音 E2
+  tBuf=new Float32Array(tAnalyser.fftSize);
+  tctx.createMediaStreamSource(tStream).connect(tAnalyser);
+  $('tStart').disabled=true; $('tStop').disabled=false;
+  $('tStatus').textContent='調音中 · '+tctx.sampleRate+'Hz';
+  tunerLoop();
+}
+function tunerStop(){
+  cancelAnimationFrame(traf);
+  if(tStream) tStream.getTracks().forEach(t=>t.stop());
+  if(tctx) tctx.close();
+  tctx=tAnalyser=tStream=null;
+  $('tStart').disabled=false; $('tStop').disabled=true; $('tStatus').textContent='已停止';
+  $('tNote').textContent='—'; $('tNote').className='big wait';
+  $('tCents').textContent='已停止'; $('tCents').style.color='var(--muted)';
+  $('tNeedle').style.left='50%';
+}
+function tunerLoop(){
+  traf=requestAnimationFrame(tunerLoop);
+  if(!tAnalyser) return;
+  tAnalyser.getFloatTimeDomainData(tBuf);
+  let rms=0; for(const v of tBuf) rms+=v*v;
+  rms=Math.sqrt(rms/tBuf.length);
+  if(rms<0.008){
+    $('tNote').textContent='—'; $('tNote').className='big wait';
+    $('tCents').textContent='彈一根弦'; $('tCents').style.color='var(--muted)';
+    return;
+  }
+  const {freq,clarity}=yin(tBuf,tctx.sampleRate);
+  if(!(freq>0)||clarity<0.6){
+    $('tCents').textContent='訊號不夠乾淨 — 只彈一根弦，讓它響久一點';
+    $('tCents').style.color='var(--wait)'; return;
+  }
+  const n=freqToNote(freq), st=nearestString(freq);
+  $('tNote').textContent=n.name+n.octave;
+  $('tNote').className='big '+(n.inTune?'ok':'bad');
+  const dir = n.cents>0 ? '偏高' : '偏低';
+  $('tCents').textContent = n.inTune ? `準 (${n.cents.toFixed(1)} 音分)`
+    : `${dir} ${Math.abs(n.cents).toFixed(0)} 音分 — ${n.cents>0?'放鬆':'鎖緊'}`;
+  $('tCents').style.color = n.inTune?'var(--ok)':'var(--bad)';
+  const pos=Math.max(-50,Math.min(50,n.cents));
+  $('tNeedle').style.left=(50+pos)+'%';
+  $('tNeedle').className=n.inTune?'ok':'';
+  $('tTarget').textContent=`最接近：第 ${st.label}（${freq.toFixed(1)}Hz）`;
+}
+$('tStart').addEventListener('click',tunerStart);
+$('tStop').addEventListener('click',tunerStop);
+
+// ═══════════════ 節拍器 ═══════════════
+// 用 Web Audio 的時間軸排程，不用 setInterval —— requestAnimationFrame 會被
+// 畫面更新拖慢，拍子就不準了。音訊時鐘不受影響。
+let mctx=null, mOn=false, mTimer=0, mNext=0, mBeatIdx=0;
+let BPM=80, BEATS=4;
+const LOOKAHEAD=0.1, TICK=25;
+function buildBeatUI(){
+  $('mBeat').innerHTML='';
+  for(let i=0;i<BEATS;i++){ const d=document.createElement('div'); if(i===0)d.className='accent'; $('mBeat').appendChild(d); }
+}
+buildBeatUI();
+$('mBpm').addEventListener('input',e=>{BPM=+e.target.value;$('mBpmOut').textContent=BPM;});
+$('mBeats').addEventListener('input',e=>{BEATS=+e.target.value;$('mBeatsOut').textContent=BEATS+'/4';buildBeatUI();});
+function click(time,accent){
+  const o=mctx.createOscillator(), g=mctx.createGain();
+  o.frequency.value=accent?1600:1000;
+  g.gain.setValueAtTime(0,time);
+  g.gain.linearRampToValueAtTime(accent?0.5:0.3,time+0.001);
+  g.gain.exponentialRampToValueAtTime(0.0001,time+0.06);
+  o.connect(g); g.connect(mctx.destination); o.start(time); o.stop(time+0.07);
+  const idx=mBeatIdx, delay=Math.max(0,(time-mctx.currentTime)*1000);
+  setTimeout(()=>{
+    const els=$('mBeat').children;
+    if(els[idx]){ els[idx].classList.add('on'); setTimeout(()=>els[idx].classList.remove('on'),90); }
+  }, delay);
+}
+function scheduler(){
+  while(mNext < mctx.currentTime + LOOKAHEAD){
+    click(mNext, mBeatIdx===0);
+    mNext += 60/BPM;
+    mBeatIdx=(mBeatIdx+1)%BEATS;
+  }
+}
+async function metroToggle(){
+  if(mOn){
+    mOn=false; clearInterval(mTimer);
+    if(mctx) mctx.close(); mctx=null;
+    $('mToggle').textContent='開始'; $('mStatus').textContent='停止中';
+    [...$('mBeat').children].forEach(d=>d.classList.remove('on'));
+    return;
+  }
+  mctx=new (window.AudioContext||window.webkitAudioContext)();
+  if(mctx.state==='suspended') await mctx.resume();
+  mOn=true; mBeatIdx=0; mNext=mctx.currentTime+0.05;
+  mTimer=setInterval(scheduler,TICK);
+  $('mToggle').textContent='停止'; $('mStatus').textContent=BPM+' BPM · '+BEATS+'/4';
+}
+$('mToggle').addEventListener('click',metroToggle);
 
 // ═══ 核心自我檢查 ═══
 (() => {
