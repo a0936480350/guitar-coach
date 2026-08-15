@@ -1,0 +1,11 @@
+{
+  "name": "guitar-coach",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "吉他練習即時回饋 — M0：音訊和弦辨識",
+  "scripts": {
+    "test": "node src/selftest.mjs",
+    "serve": "npx --yes serve . -l 4173"
+  }
+}
