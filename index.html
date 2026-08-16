@@ -158,6 +158,12 @@
   ul.plain{margin:8px 0 0;padding-left:19px}
   ul.plain li{font-size:.86rem;color:var(--muted);margin-bottom:6px}
   ul.plain b{color:var(--ink)}
+  .calibbadge{margin-top:12px;padding:11px 14px;border-radius:9px;font-size:.88rem;font-weight:700;
+              text-align:center}
+  .calibbadge.off{background:#2a1614;border:1px solid #4a2320;color:#f0a49c}
+  .calibbadge.mid{background:#211a10;border:1px solid #5a4420;color:#e3a95f}
+  .calibbadge.on{background:#132419;border:1px solid #20452e;color:#8fd9b3}
+  .mini{font-size:.75rem;padding:6px 11px;border-radius:7px}
   [hidden]{display:none !important}
   details summary{cursor:pointer;font-weight:700;font-size:.92rem}
   a{color:var(--brand)}
@@ -363,9 +369,10 @@
     </div>
 
     <div class="card">
-      <div class="camwrap"><video id="cam" playsinline muted></video><canvas id="draw"></canvas></div>
+      <div class="camwrap" id="eyeCam"><video id="cam" playsinline muted></video><canvas id="draw"></canvas></div>
       <ul class="issues" id="issues"><li class="clean">尚未偵測</li></ul>
       <div class="metrics" id="metrics"></div>
+      <div id="calibBadge" class="calibbadge off">尚未校準 — 現在只有角度，沒有音名</div>
       <div class="fretnote" id="fretNote"></div>
     </div>
 
@@ -425,6 +432,7 @@
       <p class="note" style="margin:0 0 10px">
         同時聽聲音與看姿勢。<b>兩個都對才算過一關</b>，過了自動換下一個和弦。
       </p>
+      <div id="bothCam" class="camwrap" style="margin-bottom:14px"></div>
       <div class="main">
         <div>
           <div class="lbl">現在練</div>
@@ -445,15 +453,49 @@
   <!-- ═══════════ 聽力測驗 ═══════════ -->
   <section id="paneEar2" role="tabpanel" hidden>
     <div class="card">
-      <div class="lbl">題型</div>
+      <div class="lbl">題型（可複選，隨機出）</div>
       <div class="targets" id="qTypes"></div>
       <p class="note" id="qTypeNote" style="margin:9px 0 0"></p>
-      <div class="bar" style="margin:13px 0 0">
+    </div>
+
+    <div class="card" id="scopeInterval">
+      <div class="lbl">音程範圍</div>
+      <div class="targets" id="qIntervals"></div>
+      <div class="bar" style="margin:9px 0 0">
+        <button class="mini" data-pick="qIntervals" data-mode="all">全選</button>
+        <button class="mini" data-pick="qIntervals" data-mode="none">全不選</button>
+        <button class="mini" data-pick="qIntervals" data-mode="basic">只留三度與五度</button>
+      </div>
+      <div class="lbl" style="margin-top:13px">方向</div>
+      <div class="targets" id="qDirs"></div>
+    </div>
+
+    <div class="card" id="scopeProg">
+      <div class="lbl">和弦進行範圍</div>
+      <div class="targets" id="qProgs"></div>
+      <div class="bar" style="margin:9px 0 0">
+        <button class="mini" data-pick="qProgs" data-mode="all">全選</button>
+        <button class="mini" data-pick="qProgs" data-mode="none">全不選</button>
+      </div>
+    </div>
+
+    <div class="card" id="scopeQuality">
+      <div class="lbl">和弦種類範圍</div>
+      <div class="targets" id="qQuals"></div>
+      <div class="bar" style="margin:9px 0 0">
+        <button class="mini" data-pick="qQuals" data-mode="all">全選</button>
+        <button class="mini" data-pick="qQuals" data-mode="none">全不選</button>
+        <button class="mini" data-pick="qQuals" data-mode="basic">只留大三小三</button>
+      </div>
+    </div>
+
+    <div class="card">
+      <div class="bar" style="margin:0">
         <button id="qNew" class="primary">出題</button>
         <button id="qPlay" disabled>再聽一次</button>
         <label class="hint"><input type="radio" name="ansMode" value="button" checked /> 按鈕作答</label>
         <label class="hint"><input type="radio" name="ansMode" value="guitar" /> 用吉他彈答案</label>
-        <span id="qStatus" class="hint">按「出題」開始</span>
+        <span id="qStatus" class="hint">選好範圍後按「出題」</span>
       </div>
     </div>
 
@@ -591,12 +633,39 @@ import { analyse, DEFAULT_RULES, WRIST_ANGLE_UNAVAILABLE, LM } from './src/postu
 import { computeHomography, applyHomography, locate, validateCalibration,
          TARGET_RECT, CALIB_STEPS, fretToX } from './src/fretboard.js';
 import { yin, freqToNote, nearestString, STANDARD_TUNING, Smoother, Hysteresis, midiToFreq } from './src/pitch.js';
-import { makeQuestion, QUESTION_TYPES } from './src/eartraining.js';
+import { makeQuestion, QUESTION_TYPES, INTERVALS, PROGRESSIONS, QUALITY_LABEL } from './src/eartraining.js';
 import { renderNotation } from './src/notation.js';
 import { SUBDIVISIONS, clickGrid, DRUM_STYLES, drumGrid } from './src/rhythm.js';
 import { BACKING_STYLES, generateBacking, KEYS as BK_KEYS } from './src/backing.js';
+import { pluck, makeReverb, drumHit, humanize, midiToHz } from './src/synth.js';
 
 const $ = id => document.getElementById(id);
+
+// ── 全域共用一個 AudioContext ────────────────────────────────────────────────
+// 原本節拍器/鼓機/伴奏/調音器/示範音各開一個，實測有 9 處在 new。
+// Chrome 大約只允許 6 個並存，而且 close() 是非同步的，反覆開關會累積殘留 ——
+// 這就是「會 delay、怪怪的」的原因。改成整個 App 共用一個，永不 close。
+let _AC = null;
+let _REV = null;
+function ac(){
+  if(!_AC) _AC = new (window.AudioContext || window.webkitAudioContext)();
+  if(_AC.state === 'suspended') _AC.resume();
+  return _AC;
+}
+/** 共用殘響匯流排 —— 乾聲太貼耳，是「聽起來假」的原因之一 */
+function rev(){
+  const c = ac();
+  if(!_REV) _REV = makeReverb(c, c.destination, 0.20);
+  return _REV;
+}
+
+// ── 播放互斥 ────────────────────────────────────────────────────────────────
+// 節拍器 / 鼓機 / 伴奏 / 調音器同時開會互相干擾（而且調音器還會收到自己的聲音）。
+// 開一個就自動關掉其他的。
+const PLAYERS = {};
+function soloPlayer(name){
+  Object.entries(PLAYERS).forEach(([n,stop]) => { if(n!==name) stop(); });
+}
 const FFT = 8192;
 $('cannot').textContent = WRIST_ANGLE_UNAVAILABLE;
 
@@ -608,6 +677,10 @@ Object.keys(panes).forEach(t => $(t).addEventListener('click', () => {
     $(tab).setAttribute('aria-selected', String(on));
     $(pane).hidden = !on;
   });
+  // 鏡頭畫面只有一份 DOM，跟著分頁搬 —— 不然合併練習看不到自己
+  const host = t === 'tabBoth' ? $('bothCam') : $('eyeCam');
+  const v = $('cam'), c = $('draw');
+  if (host && v.parentElement !== host) { host.appendChild(v); host.appendChild(c); }
 }));
 
 // 總覽卡片：點卡片直接跳到那個功能
@@ -728,7 +801,7 @@ async function audioStart(){
     micStream = await navigator.mediaDevices.getUserMedia({
       audio:{echoCancellation:false,noiseSuppression:false,autoGainControl:false}});
   }catch(e){$('aStatus').textContent='麥克風被拒絕：'+e.name;return false;}
-  actx = new (window.AudioContext||window.webkitAudioContext)();
+  actx = ac();
   if(actx.state==='suspended') await actx.resume();
   sr = actx.sampleRate;
   analyser = actx.createAnalyser();
@@ -741,8 +814,7 @@ async function audioStart(){
 function audioStop(){
   cancelAnimationFrame(araf);
   if(micStream) micStream.getTracks().forEach(t=>t.stop());
-  if(actx) actx.close();
-  actx=analyser=micStream=null;
+    actx=analyser=micStream=null;
   $('aStart').disabled=false; $('aStop').disabled=true; $('aStatus').textContent='已停止';
   $('big').textContent='—'; $('big').className='big wait';
   $('say').textContent='已停止'; $('say').style.color='var(--muted)';
@@ -815,7 +887,7 @@ function audioLoop(){
     + (amb.length?`　⚠ 與 ${amb.join('/')} 音級完全相同，原理上分不出`:'');
 }
 function demo(){
-  const a=new (window.AudioContext||window.webkitAudioContext)();
+  const a = ac();
   const f=[82.41,123.47,164.81,196.00,246.94,329.63];
   const t0=a.currentTime+0.05;
   f.forEach((freq,i)=>{for(let h=1;h<=4;h++){
@@ -824,7 +896,6 @@ function demo(){
     g.gain.setValueAtTime(0,s); g.gain.linearRampToValueAtTime(0.16/(h*h),s+0.01);
     g.gain.exponentialRampToValueAtTime(0.0001,s+2.6);
     o.connect(g);g.connect(a.destination);o.start(s);o.stop(s+2.7);}});
-  setTimeout(()=>a.close(),3200);
   $('aStatus').textContent = actx?'播放合成 Em — 應判定為 Em':'播放合成 Em（請先開始聆聽）';
 }
 $('aStart').addEventListener('click',audioStart);
@@ -938,10 +1009,17 @@ function visionLoop(){
         g.beginPath(); g.arc(px,py,11,0,7); g.stroke();
       }
     });
-    $('fretNote').innerHTML = found.length ? found.join('')
-      : '<div style="grid-column:1/-1;color:var(--muted);font-size:.82rem">手指不在指板上，或都在空弦位置</div>';
+    $('calibBadge').className='calibbadge on';
+    $('calibBadge').textContent = found.length
+      ? `已校準 ✓　偵測到 ${found.length} 根手指按在指板上`
+      : '已校準 ✓　目前沒有手指按在指板上（都在空弦位置）';
+    $('fretNote').innerHTML = found.length ? found.join('') : '';
   } else {
-    $('fretNote').innerHTML='<div style="grid-column:1/-1;color:var(--muted);font-size:.82rem">尚未校準 — 按上面的「開始校準」</div>';
+    $('calibBadge').className = calibMode ? 'calibbadge mid' : 'calibbadge off';
+    $('calibBadge').textContent = calibMode
+      ? `校準中 — 已點 ${calibPts.length}/4 個角`
+      : '尚未校準 — 現在只有角度，沒有音名。按下面的「開始校準」';
+    $('fretNote').innerHTML='';
   }
 
   const a = analyse(hand, RULES);
@@ -1077,25 +1155,103 @@ $('bStart').addEventListener('click',bothStart);
 $('bStop').addEventListener('click',bothStop);
 bUpdate();
 
-// ═══════════════ 聽力測驗 ═══════════════
-let qType='interval', qCur=null, qOk=0, qNo=0, qAnswered=false;
-const qChips={};
-Object.entries(QUESTION_TYPES).forEach(([k,v])=>{
-  const b=document.createElement('button');
-  b.className='chip'; b.textContent=v.label; b.type='button';
-  b.style.minWidth='auto';
-  b.setAttribute('aria-pressed',String(k===qType));
-  b.addEventListener('click',()=>{
-    qType=k;
-    Object.entries(qChips).forEach(([n,el])=>el.setAttribute('aria-pressed',String(n===qType)));
-    $('qTypeNote').textContent=QUESTION_TYPES[k].note;
+// ═══════════════ 聽力測驗（多選範圍）═══════════════
+// 全部改成多選：選好範圍之後，出題從「你勾的那些」裡面隨機抽。
+// 這樣才能只練「大三小三」或只練「m3 M3」或只練「251」。
+let qCur=null, qOk=0, qNo=0, qAnswered=false;
+
+/** 建立一組可複選的 chip */
+function multiChips(hostId, items, initiallyOn){
+  const host=$(hostId); host.innerHTML='';
+  items.forEach(it=>{
+    const b=document.createElement('button');
+    b.className='chip'; b.type='button'; b.style.minWidth='auto';
+    b.textContent=it.label; b.dataset.val=it.val;
+    b.setAttribute('aria-pressed', String(initiallyOn(it)));
+    b.addEventListener('click',()=>{
+      b.setAttribute('aria-pressed', b.getAttribute('aria-pressed')==='true'?'false':'true');
+      syncScopes();
+    });
+    host.appendChild(b);
   });
-  qChips[k]=b; $('qTypes').appendChild(b);
+}
+const picked = id => [...$(id).children]
+  .filter(b=>b.getAttribute('aria-pressed')==='true').map(b=>b.dataset.val);
+
+// 題型
+multiChips('qTypes',
+  Object.entries(QUESTION_TYPES).map(([k,v])=>({val:k,label:v.label})),
+  it=>it.val==='interval');
+
+// 音程
+multiChips('qIntervals',
+  INTERVALS.filter(i=>i.semis>0).map(i=>({val:String(i.semis),label:i.name})),
+  it=>['3','4','7'].includes(it.val));      // 預設 m3 M3 P5
+
+// 方向
+multiChips('qDirs',
+  [{val:'up',label:'上行'},{val:'down',label:'下行'},{val:'harmonic',label:'同時發聲'}],
+  ()=>true);
+
+// 和弦進行
+multiChips('qProgs',
+  PROGRESSIONS.map(p=>({val:p.id,label:p.label})), ()=>true);
+
+// 和弦品質
+multiChips('qQuals',
+  Object.keys(QUALITY_LABEL).map(q=>({val:q,label:QUALITY_LABEL[q]})),
+  it=>['maj','min'].includes(it.val));
+
+// 快捷鈕
+document.querySelectorAll('.mini[data-pick]').forEach(btn=>{
+  btn.addEventListener('click',()=>{
+    const host=$(btn.dataset.pick), mode=btn.dataset.mode;
+    [...host.children].forEach(b=>{
+      let on = mode==='all';
+      if(mode==='none') on=false;
+      if(mode==='basic'){
+        on = btn.dataset.pick==='qIntervals' ? ['3','4','7'].includes(b.dataset.val)
+                                             : ['maj','min'].includes(b.dataset.val);
+      }
+      b.setAttribute('aria-pressed',String(on));
+    });
+    syncScopes();
+  });
 });
-$('qTypeNote').textContent=QUESTION_TYPES[qType].note;
+
+/** 只顯示跟目前勾選題型有關的範圍設定 —— 不然畫面一堆用不到的選項 */
+function syncScopes(){
+  const types=picked('qTypes');
+  $('scopeInterval').hidden = !types.includes('interval');
+  $('scopeProg').hidden     = !types.includes('progression');
+  $('scopeQuality').hidden  = !(types.includes('chordtone')||types.includes('chordquality'));
+  $('qTypeNote').textContent = types.length
+    ? types.map(t=>QUESTION_TYPES[t].label).join('、') + ' —— 出題會從勾選的範圍隨機抽'
+    : '⚠ 至少要選一種題型';
+}
+syncScopes();
+
+function currentOpts(type){
+  const o={};
+  if(type==='interval'){
+    const semis=picked('qIntervals').map(Number);
+    if(semis.length) o.intervals = INTERVALS.filter(i=>semis.includes(i.semis));
+    const dirs=picked('qDirs');
+    if(dirs.length) o.direction = dirs[Math.floor(Math.random()*dirs.length)];
+  }
+  if(type==='progression'){
+    const ids=picked('qProgs');
+    if(ids.length) o.progressions = PROGRESSIONS.filter(p=>ids.includes(p.id));
+  }
+  if(type==='chordtone'||type==='chordquality'){
+    const qs=picked('qQuals');
+    if(qs.length>=2) o.qualities = qs;    // 至少兩種才有干擾項可選
+  }
+  return o;
+}
 
 function playMidis(midis, mode){
-  const a=new (window.AudioContext||window.webkitAudioContext)();
+  const a = ac();
   const t0=a.currentTime+0.08;
   const one=(midi,start,dur)=>{
     for(let h=1;h<=4;h++){
@@ -1109,10 +1265,9 @@ function playMidis(midis, mode){
   };
   if(mode==='together'){ midis.forEach(m=>one(m,t0,1.6)); }
   else { midis.forEach((m,i)=>one(m,t0+i*0.75,1.2)); }
-  setTimeout(()=>a.close(), 400+midis.length*900);
 }
 function playChords(chords){
-  const a=new (window.AudioContext||window.webkitAudioContext)();
+  const a = ac();
   const t0=a.currentTime+0.08;
   chords.forEach((notes,ci)=>{
     const start=t0+ci*1.15;
@@ -1128,7 +1283,6 @@ function playChords(chords){
       }
     });
   });
-  setTimeout(()=>a.close(), 600+chords.length*1300);
 }
 function playQuestion(){
   if(!qCur) return;
@@ -1136,13 +1290,17 @@ function playQuestion(){
   else playMidis(qCur.play.midis, qCur.play.mode);
 }
 function newQuestion(){
-  qCur=makeQuestion(qType);
+  const types=picked('qTypes');
+  if(!types.length){ $('qStatus').textContent='⚠ 至少要選一種題型'; return; }
+  const qType=types[Math.floor(Math.random()*types.length)];
+  qCur=makeQuestion(qType, Math.random, currentOpts(qType));
   qAnswered=false;
   $('qPlay').disabled=false; $('qNotation').disabled=true;
   $('qStaff').hidden=true; $('qStaff').innerHTML='';
   $('qFeedback').textContent=''; $('qExplain').textContent='';
   const mode=document.querySelector('input[name=ansMode]:checked').value;
   const promptText = {
+    chordquality:'聽這個和弦，它是什麼種類？',
     interval:'聽這兩個音，它們相距多少？',
     progression:'聽這段和弦進行，是什麼級數？',
     chordtone:'聽這個和弦，它由哪些音組成？',
@@ -1186,7 +1344,7 @@ function answer(choice, btn){
   $('qNotation').disabled=false;
   $('qOk').textContent=qOk; $('qNo').textContent=qNo;
   $('qPct').textContent = Math.round(100*qOk/(qOk+qNo))+'%';
-  logIt(`測驗 ${QUESTION_TYPES[qType].label} ${correct?'✓':'✗'} 答=${choice} 正解=${qCur.answer}`);
+  logIt(`測驗 ${QUESTION_TYPES[qCur.type].label} ${correct?'✓':'✗'} 答=${choice} 正解=${qCur.answer}`);
   speak(correct?'答對':'答錯', $('speak1').checked);
 }
 function showNotation(){
@@ -1210,21 +1368,20 @@ STANDARD_TUNING.forEach(st=>{
   $('tRef').appendChild(b);
 });
 function playRef(midi){
-  const a=new (window.AudioContext||window.webkitAudioContext)();
+  const a = ac();
   const o=a.createOscillator(), g=a.createGain();
   o.frequency.value=midiToFreq(midi); o.type='triangle';
   const t=a.currentTime;
   g.gain.setValueAtTime(0,t); g.gain.linearRampToValueAtTime(0.22,t+0.02);
   g.gain.exponentialRampToValueAtTime(0.0001,t+1.6);
   o.connect(g); g.connect(a.destination); o.start(t); o.stop(t+1.7);
-  setTimeout(()=>a.close(),2000);
 }
 async function tunerStart(){
   try{
     tStream=await navigator.mediaDevices.getUserMedia({
       audio:{echoCancellation:false,noiseSuppression:false,autoGainControl:false}});
   }catch(e){ $('tStatus').textContent='麥克風被拒絕：'+e.name; return; }
-  tctx=new (window.AudioContext||window.webkitAudioContext)();
+  tctx = ac();
   if(tctx.state==='suspended') await tctx.resume();
   tAnalyser=tctx.createAnalyser();
   tAnalyser.fftSize=8192;                 // 時域樣本，YIN 需要夠長才抓得到低音 E2
@@ -1237,8 +1394,7 @@ async function tunerStart(){
 function tunerStop(){
   cancelAnimationFrame(traf);
   if(tStream) tStream.getTracks().forEach(t=>t.stop());
-  if(tctx) tctx.close();
-  tctx=tAnalyser=tStream=null;
+    tctx=tAnalyser=tStream=null;
   $('tStart').disabled=false; $('tStop').disabled=true; $('tStatus').textContent='已停止';
   $('tNote').textContent='—'; $('tNote').className='big wait';
   $('tCents').textContent='已停止'; $('tCents').style.color='var(--muted)';
@@ -1272,7 +1428,8 @@ function tunerLoop(){
   $('tNeedle').className=n.inTune?'ok':'';
   $('tTarget').textContent=`最接近：第 ${st.label}（${freq.toFixed(1)}Hz）`;
 }
-$('tStart').addEventListener('click',tunerStart);
+PLAYERS.tuner=()=>{ if(tctx) tunerStop(); };
+$('tStart').addEventListener('click',()=>{ soloPlayer('tuner'); tunerStart(); });
 $('tStop').addEventListener('click',tunerStop);
 
 // ═══════════════ 節拍器（含細分）═══════════════
@@ -1339,20 +1496,21 @@ function scheduler(){
   }
 }
 async function metroStart(){
-  mctx=new (window.AudioContext||window.webkitAudioContext)();
+  mctx = ac();
   if(mctx.state==='suspended') await mctx.resume();
   mGrid=clickGrid(BEATS,SUB); mGi=0;
   mBarStart=mctx.currentTime+0.06; mNext=mBarStart;
-  mOn=true; mTimer=setInterval(scheduler,TICK);
+  soloPlayer('metro'); mOn=true; mTimer=setInterval(scheduler,TICK);
   $('mToggle').textContent='停止';
   $('mStatus').textContent=BPM+' BPM · '+BEATS+'/4 · '+SUBDIVISIONS[SUB].label;
 }
 function metroStop(){
   mOn=false; clearInterval(mTimer);
-  if(mctx) mctx.close(); mctx=null;
+  mctx=null;
   $('mToggle').textContent='開始'; $('mStatus').textContent='停止中';
   [...$('mBeat').children].forEach(d=>d.classList.remove('on'));
 }
+PLAYERS.metro=()=>{ if(mOn) metroStop(); };
 $('mToggle').addEventListener('click',()=>{ mOn?metroStop():metroStart(); });
 
 // ═══════════════ 鼓機 ═══════════════
@@ -1385,35 +1543,7 @@ function buildDrumUI(){
 buildDrumUI(); showDrumNote();
 $('dBpm').addEventListener('input',e=>{dBpm=+e.target.value;$('dBpmOut').textContent=dBpm;});
 
-function noiseBurst(time, dur, freq, q, vol){
-  const len=Math.max(1,Math.floor(dctx.sampleRate*dur));
-  const buf=dctx.createBuffer(1,len,dctx.sampleRate);
-  const d=buf.getChannelData(0);
-  for(let i=0;i<len;i++) d[i]=(Math.random()*2-1)*Math.pow(1-i/len,2);
-  const src=dctx.createBufferSource(); src.buffer=buf;
-  const f=dctx.createBiquadFilter(); f.type='bandpass'; f.frequency.value=freq; f.Q.value=q;
-  const g=dctx.createGain(); g.gain.value=vol;
-  src.connect(f); f.connect(g); g.connect(dctx.destination);
-  src.start(time);
-}
-function hit(time, drum){
-  if(drum==='kick'){
-    const o=dctx.createOscillator(), g=dctx.createGain();
-    o.frequency.setValueAtTime(140,time);
-    o.frequency.exponentialRampToValueAtTime(45,time+0.11);
-    g.gain.setValueAtTime(0.85,time);
-    g.gain.exponentialRampToValueAtTime(0.0001,time+0.22);
-    o.connect(g); g.connect(dctx.destination); o.start(time); o.stop(time+0.24);
-  } else if(drum==='snare'){
-    noiseBurst(time,0.14,1900,0.7,0.45);
-    const o=dctx.createOscillator(), g=dctx.createGain();
-    o.frequency.value=190;
-    g.gain.setValueAtTime(0.3,time); g.gain.exponentialRampToValueAtTime(0.0001,time+0.09);
-    o.connect(g); g.connect(dctx.destination); o.start(time); o.stop(time+0.1);
-  } else {
-    noiseBurst(time,0.045,9000,1.2,0.16);
-  }
-}
+function hit(time, drum){ const h=humanize(time,1); drumHit(dctx, rev(), h.time, drum, h.vel); }
 function drumScheduler(){
   const st=DRUM_STYLES[dStyle], spb=60/dBpm;
   while(dNext < dctx.currentTime + LOOKAHEAD){
@@ -1430,19 +1560,20 @@ function drumScheduler(){
   }
 }
 async function drumStart(){
-  dctx=new (window.AudioContext||window.webkitAudioContext)();
+  dctx = ac();
   if(dctx.state==='suspended') await dctx.resume();
   dGrid=drumGrid(dStyle); dGi=0;
   dBarStart=dctx.currentTime+0.06; dNext=dBarStart+dGrid[0].beat*(60/dBpm);
-  dOn=true; dTimer=setInterval(drumScheduler,TICK);
+  soloPlayer('drum'); dOn=true; dTimer=setInterval(drumScheduler,TICK);
   $('dToggle').textContent='停止'; $('dStatus').textContent=DRUM_STYLES[dStyle].label+' · '+dBpm+' BPM';
 }
 function drumStop(){
   dOn=false; clearInterval(dTimer);
-  if(dctx) dctx.close(); dctx=null;
+  dctx=null;
   $('dToggle').textContent='開始'; $('dStatus').textContent='停止中';
   [...$('dBeat').children].forEach(d=>d.classList.remove('on'));
 }
+PLAYERS.drum=()=>{ if(dOn) drumStop(); };
 $('dToggle').addEventListener('click',()=>{ dOn?drumStop():drumStart(); });
 
 // ═══════════════ Full band 伴奏 ═══════════════
@@ -1477,40 +1608,12 @@ function newBacking(){
 }
 
 function bkVoice(time, midi, dur, kind){
-  const o=bkCtx.createOscillator(), g=bkCtx.createGain(), f=bkCtx.createBiquadFilter();
-  const hz=440*Math.pow(2,(midi-69)/12);
-  o.frequency.value=hz;
-  if(kind==='bass'){ o.type='triangle'; f.type='lowpass'; f.frequency.value=900; }
-  else { o.type='sawtooth'; f.type='lowpass'; f.frequency.value=2600; }
-  const vol = kind==='bass' ? 0.34 : 0.10;
-  g.gain.setValueAtTime(0,time);
-  g.gain.linearRampToValueAtTime(vol,time+0.012);
-  g.gain.setValueAtTime(vol,time+dur*0.6);
-  g.gain.exponentialRampToValueAtTime(0.0001,time+dur);
-  o.connect(f); f.connect(g); g.connect(bkCtx.destination);
-  o.start(time); o.stop(time+dur+0.05);
+  // Karplus-Strong 撥弦，不是振盪器 —— 這是「不像 MIDI」的關鍵
+  const h = humanize(time, kind==='bass' ? 0.34 : 0.13);
+  pluck(bkCtx, rev(), h.time, midiToHz(midi), Math.max(dur, 0.45), h.vel,
+        kind==='bass' ? { damping:0.30, bright:0.35 } : { damping:0.55, bright:0.62 });
 }
-function bkNoise(time,dur,freq,q,vol){
-  const len=Math.max(1,Math.floor(bkCtx.sampleRate*dur));
-  const buf=bkCtx.createBuffer(1,len,bkCtx.sampleRate);
-  const d=buf.getChannelData(0);
-  for(let i=0;i<len;i++) d[i]=(Math.random()*2-1)*Math.pow(1-i/len,2);
-  const src=bkCtx.createBufferSource(); src.buffer=buf;
-  const f=bkCtx.createBiquadFilter(); f.type='bandpass'; f.frequency.value=freq; f.Q.value=q;
-  const g=bkCtx.createGain(); g.gain.value=vol;
-  src.connect(f); f.connect(g); g.connect(bkCtx.destination); src.start(time);
-}
-function bkDrum(time,drum){
-  if(drum==='kick'){
-    const o=bkCtx.createOscillator(), g=bkCtx.createGain();
-    o.frequency.setValueAtTime(140,time);
-    o.frequency.exponentialRampToValueAtTime(45,time+0.11);
-    g.gain.setValueAtTime(0.7,time); g.gain.exponentialRampToValueAtTime(0.0001,time+0.22);
-    o.connect(g); g.connect(bkCtx.destination); o.start(time); o.stop(time+0.24);
-  } else if(drum==='snare'){
-    bkNoise(time,0.13,1900,0.7,0.34);
-  } else bkNoise(time,0.04,9000,1.2,0.13);
-}
+function bkDrum(time,drum){ const h=humanize(time,1); drumHit(bkCtx, rev(), h.time, drum, h.vel); }
 function bkScheduler(){
   const spb=60/bkData.bpm, cycle=bkData.totalBeats*spb;
   while(true){
@@ -1532,19 +1635,20 @@ function bkScheduler(){
 }
 async function backingStart(){
   if(!bkData || bkData.style.id!==bkStyle) newBacking();
-  bkCtx=new (window.AudioContext||window.webkitAudioContext)();
+  bkCtx = ac();
   if(bkCtx.state==='suspended') await bkCtx.resume();
   bkIdx=0; bkLoop=0; bkStart=bkCtx.currentTime+0.12;
-  bkOn=true; bkTimer=setInterval(bkScheduler,25);
+  soloPlayer('backing'); bkOn=true; bkTimer=setInterval(bkScheduler,25);
   $('bkToggle').textContent='停止';
   $('bkStatus').textContent=`播放中 · key ${bkData.key} · ${bkData.bpm} BPM`;
 }
 function backingStop(){
   bkOn=false; clearInterval(bkTimer);
-  if(bkCtx) bkCtx.close(); bkCtx=null;
+  bkCtx=null;
   $('bkToggle').textContent='開始'; $('bkStatus').textContent='停止中';
   [...$('bkProg').children].forEach(el=>el.classList.remove('on'));
 }
+PLAYERS.backing=()=>{ if(bkOn) backingStop(); };
 $('bkToggle').addEventListener('click',()=>{ bkOn?backingStop():backingStart(); });
 $('bkNew').addEventListener('click',()=>{
   const was=bkOn; if(was) backingStop();
