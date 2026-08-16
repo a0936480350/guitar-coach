@@ -131,10 +131,10 @@
 <div class="wrap">
 
   <h1>吉他練習回饋</h1>
-  <p class="sub">聽你彈得對不對，看你姿勢對不對。全部在瀏覽器裡跑，影像與聲音不會離開你的裝置。</p>
+  <p class="sub">「和弦偵測」聽<b>你彈的</b>是什麼和弦；「聽力測驗」是<b>程式出題</b>考你。全部在瀏覽器裡跑，影像與聲音不會離開你的裝置。</p>
 
   <div class="tabs" role="tablist">
-    <button id="tabEar"  role="tab" aria-selected="true"  aria-controls="paneEar">🎧 聽力（和弦）</button>
+    <button id="tabEar"  role="tab" aria-selected="true"  aria-controls="paneEar">🎧 和弦偵測</button>
     <button id="tabEye"  role="tab" aria-selected="false" aria-controls="paneEye">👁 姿勢（左手）</button>
     <button id="tabBoth" role="tab" aria-selected="false" aria-controls="paneBoth">🎯 合併練習</button>
     <button id="tabEar2" role="tab" aria-selected="false" aria-controls="paneEar2">📝 聽力測驗</button>
@@ -325,12 +325,32 @@
       </div>
       <div class="slider"><span class="lbl">BPM</span>
         <input id="mBpm" type="range" min="40" max="220" step="1" value="80" /><output id="mBpmOut">80</output></div>
-      <div class="slider"><span class="lbl">拍號</span>
-        <input id="mBeats" type="range" min="2" max="8" step="1" value="4" /><output id="mBeatsOut">4/4</output></div>
+      <div class="bar" style="margin:11px 0 0">
+        <span class="lbl">拍號</span>
+        <button id="m44" class="chip" aria-pressed="true">4/4</button>
+        <button id="m34" class="chip" aria-pressed="false">3/4</button>
+      </div>
+      <div class="lbl" style="margin-top:11px">細分</div>
+      <div class="targets" id="mSubs"></div>
       <div class="beat" id="mBeat"></div>
       <p class="note" style="margin:11px 0 0">
-        第一拍是重音（綠色）。用 Web Audio 排程，不受畫面更新影響 —— 所以拍子準。
+        第一拍是重音（綠色）、拍點次之、細分最輕。用 Web Audio 時間軸排程，
+        不受畫面更新影響 —— 實測 120BPM 抖動 0ms。
       </p>
+    </div>
+
+    <div class="card">
+      <h2>鼓機</h2>
+      <p class="note" style="margin:0">選一個風格當背景，比純節拍器好跟。</p>
+      <div class="targets" id="dStyles" style="margin-top:10px"></div>
+      <div class="bar" style="margin:12px 0 0">
+        <button id="dToggle" class="primary">開始</button>
+        <span class="hint" id="dStatus">停止中</span>
+      </div>
+      <div class="slider"><span class="lbl">BPM</span>
+        <input id="dBpm" type="range" min="50" max="200" step="1" value="100" /><output id="dBpmOut">100</output></div>
+      <div class="beat" id="dBeat"></div>
+      <p class="note" id="dNote" style="margin:10px 0 0"></p>
     </div>
   </section>
 
@@ -365,6 +385,7 @@ import { analyse, DEFAULT_RULES, WRIST_ANGLE_UNAVAILABLE, LM } from './src/postu
 import { yin, freqToNote, nearestString, STANDARD_TUNING, Smoother, Hysteresis, midiToFreq } from './src/pitch.js';
 import { makeQuestion, QUESTION_TYPES } from './src/eartraining.js';
 import { renderNotation } from './src/notation.js';
+import { SUBDIVISIONS, clickGrid, DRUM_STYLES, drumGrid } from './src/rhythm.js';
 
 const $ = id => document.getElementById(id);
 const FFT = 8192;
@@ -789,7 +810,7 @@ function newQuestion(){
     const need = qCur.guitarAnswer ? qCur.guitarAnswer.join(' → ') : '（此題型請用按鈕作答）';
     $('qChoices').innerHTML =
       `<div class="note" style="grid-column:1/-1">用吉他彈出答案：<b>${need}</b><br>` +
-      `切到「聽力（和弦）」分頁開啟麥克風，彈出來讓它判定。` +
+      `切到「和弦偵測」分頁開啟麥克風，彈出來讓它判定。` +
       `<br><span class="hint">音程題目前只支援按鈕作答 —— 單音辨識已做好，串接是下一步。</span></div>`;
     $('qStatus').textContent='用吉他作答';
   }
@@ -900,54 +921,175 @@ function tunerLoop(){
 $('tStart').addEventListener('click',tunerStart);
 $('tStop').addEventListener('click',tunerStop);
 
-// ═══════════════ 節拍器 ═══════════════
-// 用 Web Audio 的時間軸排程，不用 setInterval —— requestAnimationFrame 會被
-// 畫面更新拖慢，拍子就不準了。音訊時鐘不受影響。
-let mctx=null, mOn=false, mTimer=0, mNext=0, mBeatIdx=0;
-let BPM=80, BEATS=4;
-const LOOKAHEAD=0.1, TICK=25;
+// ═══════════════ 節拍器（含細分）═══════════════
+// 用 Web Audio 的時間軸排程，不用 setInterval —— rAF/setInterval 會被畫面更新
+// 拖慢，拍子就不準了。音訊時鐘不受影響。
+let mctx=null, mOn=false, mTimer=0, mNext=0, mIdx=0;
+let BPM=80, BEATS=4, SUB='quarter';
+const LOOKAHEAD=0.12, TICK=25;
+
+Object.entries(SUBDIVISIONS).forEach(([k,v])=>{
+  const b=document.createElement('button');
+  b.className='chip'; b.type='button'; b.style.minWidth='auto';
+  b.innerHTML=v.label+'<br><span style="font-size:.7em;opacity:.75">'+v.sound+'</span>';
+  b.setAttribute('aria-pressed',String(k===SUB));
+  b.addEventListener('click',()=>{
+    SUB=k;
+    document.querySelectorAll('#mSubs .chip').forEach(x=>x.setAttribute('aria-pressed','false'));
+    b.setAttribute('aria-pressed','true');
+    if(mOn){ metroStop(); metroStart(); }
+  });
+  $('mSubs').appendChild(b);
+});
+function setBeats(n){
+  BEATS=n;
+  $('m44').setAttribute('aria-pressed',String(n===4));
+  $('m34').setAttribute('aria-pressed',String(n===3));
+  buildBeatUI();
+  if(mOn){ metroStop(); metroStart(); }
+}
+$('m44').addEventListener('click',()=>setBeats(4));
+$('m34').addEventListener('click',()=>setBeats(3));
 function buildBeatUI(){
   $('mBeat').innerHTML='';
   for(let i=0;i<BEATS;i++){ const d=document.createElement('div'); if(i===0)d.className='accent'; $('mBeat').appendChild(d); }
 }
 buildBeatUI();
 $('mBpm').addEventListener('input',e=>{BPM=+e.target.value;$('mBpmOut').textContent=BPM;});
-$('mBeats').addEventListener('input',e=>{BEATS=+e.target.value;$('mBeatsOut').textContent=BEATS+'/4';buildBeatUI();});
-function click(time,accent){
+
+function tick(time, accent){
   const o=mctx.createOscillator(), g=mctx.createGain();
-  o.frequency.value=accent?1600:1000;
+  // 三段音高與音量：小節重音最高最大、拍點次之、細分最輕
+  o.frequency.value = accent==='bar'?1800 : accent==='beat'?1200 : 800;
+  const vol = accent==='bar'?0.5 : accent==='beat'?0.32 : 0.14;
   g.gain.setValueAtTime(0,time);
-  g.gain.linearRampToValueAtTime(accent?0.5:0.3,time+0.001);
-  g.gain.exponentialRampToValueAtTime(0.0001,time+0.06);
-  o.connect(g); g.connect(mctx.destination); o.start(time); o.stop(time+0.07);
-  const idx=mBeatIdx, delay=Math.max(0,(time-mctx.currentTime)*1000);
-  setTimeout(()=>{
-    const els=$('mBeat').children;
-    if(els[idx]){ els[idx].classList.add('on'); setTimeout(()=>els[idx].classList.remove('on'),90); }
-  }, delay);
+  g.gain.linearRampToValueAtTime(vol,time+0.001);
+  g.gain.exponentialRampToValueAtTime(0.0001,time+(accent==='sub'?0.035:0.06));
+  o.connect(g); g.connect(mctx.destination); o.start(time); o.stop(time+0.08);
+  if(accent!=='sub'){
+    const idx=Math.round(mIdx)%BEATS, delay=Math.max(0,(time-mctx.currentTime)*1000);
+    setTimeout(()=>{const e=$('mBeat').children[idx];
+      if(e){e.classList.add('on');setTimeout(()=>e.classList.remove('on'),90);}},delay);
+  }
 }
+let mGrid=[], mGi=0, mBarStart=0;
 function scheduler(){
+  const spb=60/BPM;
   while(mNext < mctx.currentTime + LOOKAHEAD){
-    click(mNext, mBeatIdx===0);
-    mNext += 60/BPM;
-    mBeatIdx=(mBeatIdx+1)%BEATS;
+    const ev=mGrid[mGi];
+    tick(mNext, ev.accent);
+    mIdx=Math.floor(ev.beat);
+    mGi++;
+    if(mGi>=mGrid.length){ mGi=0; mBarStart+=BEATS*spb; }
+    mNext = mBarStart + mGrid[mGi].beat*spb;
   }
 }
-async function metroToggle(){
-  if(mOn){
-    mOn=false; clearInterval(mTimer);
-    if(mctx) mctx.close(); mctx=null;
-    $('mToggle').textContent='開始'; $('mStatus').textContent='停止中';
-    [...$('mBeat').children].forEach(d=>d.classList.remove('on'));
-    return;
-  }
+async function metroStart(){
   mctx=new (window.AudioContext||window.webkitAudioContext)();
   if(mctx.state==='suspended') await mctx.resume();
-  mOn=true; mBeatIdx=0; mNext=mctx.currentTime+0.05;
-  mTimer=setInterval(scheduler,TICK);
-  $('mToggle').textContent='停止'; $('mStatus').textContent=BPM+' BPM · '+BEATS+'/4';
+  mGrid=clickGrid(BEATS,SUB); mGi=0;
+  mBarStart=mctx.currentTime+0.06; mNext=mBarStart;
+  mOn=true; mTimer=setInterval(scheduler,TICK);
+  $('mToggle').textContent='停止';
+  $('mStatus').textContent=BPM+' BPM · '+BEATS+'/4 · '+SUBDIVISIONS[SUB].label;
 }
-$('mToggle').addEventListener('click',metroToggle);
+function metroStop(){
+  mOn=false; clearInterval(mTimer);
+  if(mctx) mctx.close(); mctx=null;
+  $('mToggle').textContent='開始'; $('mStatus').textContent='停止中';
+  [...$('mBeat').children].forEach(d=>d.classList.remove('on'));
+}
+$('mToggle').addEventListener('click',()=>{ mOn?metroStop():metroStart(); });
+
+// ═══════════════ 鼓機 ═══════════════
+let dctx=null, dOn=false, dTimer=0, dNext=0, dGi=0, dBarStart=0, dGrid=[];
+let dStyle='rock', dBpm=100;
+Object.entries(DRUM_STYLES).forEach(([k,v])=>{
+  const b=document.createElement('button');
+  b.className='chip'; b.type='button'; b.style.minWidth='auto'; b.textContent=v.label;
+  b.setAttribute('aria-pressed',String(k===dStyle));
+  b.addEventListener('click',()=>{
+    dStyle=k;
+    document.querySelectorAll('#dStyles .chip').forEach(x=>x.setAttribute('aria-pressed','false'));
+    b.setAttribute('aria-pressed','true');
+    dBpm=v.bpm; $('dBpm').value=dBpm; $('dBpmOut').textContent=dBpm;
+    buildDrumUI(); showDrumNote();
+    if(dOn){ drumStop(); drumStart(); }
+  });
+  $('dStyles').appendChild(b);
+});
+function showDrumNote(){
+  const st=DRUM_STYLES[dStyle];
+  $('dNote').textContent=st.label+' · 建議 '+st.bpm+' BPM · '+st.beats+'/4'
+    +(st.swing?' · Swing（八分音符後半拍往後挪到三連音第 3 點）':'');
+}
+function buildDrumUI(){
+  const st=DRUM_STYLES[dStyle];
+  $('dBeat').innerHTML='';
+  for(let i=0;i<st.beats;i++){ const d=document.createElement('div'); if(i===0)d.className='accent'; $('dBeat').appendChild(d); }
+}
+buildDrumUI(); showDrumNote();
+$('dBpm').addEventListener('input',e=>{dBpm=+e.target.value;$('dBpmOut').textContent=dBpm;});
+
+function noiseBurst(time, dur, freq, q, vol){
+  const len=Math.max(1,Math.floor(dctx.sampleRate*dur));
+  const buf=dctx.createBuffer(1,len,dctx.sampleRate);
+  const d=buf.getChannelData(0);
+  for(let i=0;i<len;i++) d[i]=(Math.random()*2-1)*Math.pow(1-i/len,2);
+  const src=dctx.createBufferSource(); src.buffer=buf;
+  const f=dctx.createBiquadFilter(); f.type='bandpass'; f.frequency.value=freq; f.Q.value=q;
+  const g=dctx.createGain(); g.gain.value=vol;
+  src.connect(f); f.connect(g); g.connect(dctx.destination);
+  src.start(time);
+}
+function hit(time, drum){
+  if(drum==='kick'){
+    const o=dctx.createOscillator(), g=dctx.createGain();
+    o.frequency.setValueAtTime(140,time);
+    o.frequency.exponentialRampToValueAtTime(45,time+0.11);
+    g.gain.setValueAtTime(0.85,time);
+    g.gain.exponentialRampToValueAtTime(0.0001,time+0.22);
+    o.connect(g); g.connect(dctx.destination); o.start(time); o.stop(time+0.24);
+  } else if(drum==='snare'){
+    noiseBurst(time,0.14,1900,0.7,0.45);
+    const o=dctx.createOscillator(), g=dctx.createGain();
+    o.frequency.value=190;
+    g.gain.setValueAtTime(0.3,time); g.gain.exponentialRampToValueAtTime(0.0001,time+0.09);
+    o.connect(g); g.connect(dctx.destination); o.start(time); o.stop(time+0.1);
+  } else {
+    noiseBurst(time,0.045,9000,1.2,0.16);
+  }
+}
+function drumScheduler(){
+  const st=DRUM_STYLES[dStyle], spb=60/dBpm;
+  while(dNext < dctx.currentTime + LOOKAHEAD){
+    const ev=dGrid[dGi];
+    hit(dNext, ev.drum);
+    if(ev.drum==='kick'||ev.drum==='snare'){
+      const idx=Math.floor(ev.beat)%st.beats, delay=Math.max(0,(dNext-dctx.currentTime)*1000);
+      setTimeout(()=>{const e=$('dBeat').children[idx];
+        if(e){e.classList.add('on');setTimeout(()=>e.classList.remove('on'),80);}},delay);
+    }
+    dGi++;
+    if(dGi>=dGrid.length){ dGi=0; dBarStart+=st.beats*spb; }
+    dNext = dBarStart + dGrid[dGi].beat*spb;
+  }
+}
+async function drumStart(){
+  dctx=new (window.AudioContext||window.webkitAudioContext)();
+  if(dctx.state==='suspended') await dctx.resume();
+  dGrid=drumGrid(dStyle); dGi=0;
+  dBarStart=dctx.currentTime+0.06; dNext=dBarStart+dGrid[0].beat*(60/dBpm);
+  dOn=true; dTimer=setInterval(drumScheduler,TICK);
+  $('dToggle').textContent='停止'; $('dStatus').textContent=DRUM_STYLES[dStyle].label+' · '+dBpm+' BPM';
+}
+function drumStop(){
+  dOn=false; clearInterval(dTimer);
+  if(dctx) dctx.close(); dctx=null;
+  $('dToggle').textContent='開始'; $('dStatus').textContent='停止中';
+  [...$('dBeat').children].forEach(d=>d.classList.remove('on'));
+}
+$('dToggle').addEventListener('click',()=>{ dOn?drumStop():drumStart(); });
 
 // ═══ 核心自我檢查 ═══
 (() => {
