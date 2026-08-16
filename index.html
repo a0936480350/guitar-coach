@@ -144,6 +144,20 @@
   .progbars .bar.on b{color:#06121b}
   .progbars .bar span{font-size:.66rem;color:var(--muted)}
   .progbars .bar.on span{color:#06121b}
+  .feat{display:grid;grid-template-columns:repeat(auto-fit,minmax(258px,1fr));gap:12px;margin-bottom:13px}
+  .fcard{background:var(--panel);border:1px solid var(--line);border-radius:14px;padding:19px;
+         cursor:pointer;transition:border-color .14s,transform .14s}
+  .fcard:hover{border-color:var(--brand);transform:translateY(-2px)}
+  .fcard:focus-visible{outline:2px solid var(--brand);outline-offset:2px}
+  .fcard .fi{font-size:1.7rem;line-height:1}
+  .fcard h3{margin:8px 0 5px;font-size:1.02rem}
+  .fcard p{margin:0 0 8px;font-size:.85rem;color:var(--ink-2)}
+  .fcard ul{margin:0;padding-left:17px}
+  .fcard li{font-size:.79rem;color:var(--muted);margin-bottom:3px}
+  .fcard .go{display:inline-block;margin-top:10px;font-size:.8rem;font-weight:700;color:var(--brand)}
+  ul.plain{margin:8px 0 0;padding-left:19px}
+  ul.plain li{font-size:.86rem;color:var(--muted);margin-bottom:6px}
+  ul.plain b{color:var(--ink)}
   [hidden]{display:none !important}
   details summary{cursor:pointer;font-weight:700;font-size:.92rem}
   a{color:var(--brand)}
@@ -156,15 +170,118 @@
   <p class="sub">「和弦偵測」聽<b>你彈的</b>是什麼和弦；「聽力測驗」是<b>程式出題</b>考你。全部在瀏覽器裡跑，影像與聲音不會離開你的裝置。</p>
 
   <div class="tabs" role="tablist">
-    <button id="tabEar"  role="tab" aria-selected="true"  aria-controls="paneEar">🎧 和弦偵測</button>
+    <button id="tabIntro" role="tab" aria-selected="true" aria-controls="paneIntro">🏠 總覽</button>
+    <button id="tabEar"  role="tab" aria-selected="false" aria-controls="paneEar">🎧 和弦偵測</button>
     <button id="tabEye"  role="tab" aria-selected="false" aria-controls="paneEye">👁 姿勢（左手）</button>
     <button id="tabBoth" role="tab" aria-selected="false" aria-controls="paneBoth">🎯 合併練習</button>
     <button id="tabEar2" role="tab" aria-selected="false" aria-controls="paneEar2">📝 聽力測驗</button>
     <button id="tabTool" role="tab" aria-selected="false" aria-controls="paneTool">🔧 調音 · 節拍</button>
   </div>
 
-  <!-- ═══════════ 聽力 ═══════════ -->
-  <section id="paneEar" role="tabpanel">
+  <!-- ═══════════ 首頁：功能總覽 ═══════════ -->
+  <section id="paneIntro">
+    <div class="card" style="padding:26px">
+      <h2 style="font-size:1.15rem;margin:0 0 6px">這是什麼</h2>
+      <p class="note" style="margin:0 0 4px">
+        一個練吉他用的即時回饋工具。<b>聽</b>你彈得對不對、<b>看</b>你姿勢對不對，
+        再出題考你的耳朵。
+      </p>
+      <p class="note" style="margin:0">
+        全部在你的瀏覽器裡跑，<b>影像與聲音不會離開你的裝置</b>，沒有任何資料上傳。
+      </p>
+    </div>
+
+    <div class="feat">
+      <div class="fcard" data-go="tabEar">
+        <div class="fi">🎧</div>
+        <h3>和弦偵測</h3>
+        <p>你彈，它告訴你那是什麼和弦。9／21／33 個和弦三段可選。</p>
+        <ul>
+          <li>彈單音時自動切成 <b>Solo 模式</b>，顯示音名與音分偏差</li>
+          <li>需要<b>麥克風</b></li>
+        </ul>
+        <span class="go">開啟 →</span>
+      </div>
+
+      <div class="fcard" data-go="tabEar2">
+        <div class="fi">📝</div>
+        <h3>聽力測驗</h3>
+        <p>它出題考你。音程、和弦進行級數、和弦組成、和弦種類。</p>
+        <ul>
+          <li>音程可選<b>上行 / 下行 / 同時發聲</b></li>
+          <li>答案可看<b>五線譜或 TAB</b>，即時切換</li>
+          <li>只要<b>喇叭</b>，沒帶吉他也能練</li>
+        </ul>
+        <span class="go">開啟 →</span>
+      </div>
+
+      <div class="fcard" data-go="tabEye">
+        <div class="fi">👁</div>
+        <h3>姿勢與指板</h3>
+        <p>看你的左手。手指彎曲角度、拇指有沒有越過琴頸。</p>
+        <ul>
+          <li><b>校準四個角</b>之後，會顯示你按在第幾弦第幾格、是什麼音</li>
+          <li>門檻可自己調 —— 預設值<b>不是教學標準</b></li>
+          <li>需要<b>鏡頭</b></li>
+        </ul>
+        <span class="go">開啟 →</span>
+      </div>
+
+      <div class="fcard" data-go="tabBoth">
+        <div class="fi">🎯</div>
+        <h3>合併練習</h3>
+        <p>同時聽聲音、看姿勢。兩個都對才過關，過了自動換下一個和弦。</p>
+        <ul><li>需要<b>麥克風 ＋ 鏡頭</b></li></ul>
+        <span class="go">開啟 →</span>
+      </div>
+
+      <div class="fcard" data-go="tabTool">
+        <div class="fi">🔧</div>
+        <h3>調音 · 節拍 · 伴奏</h3>
+        <p>三個工具擠在一頁。</p>
+        <ul>
+          <li><b>調音器</b>：誤差 &lt;1 音分，會告訴你該鎖緊還放鬆</li>
+          <li><b>節拍器</b>：三／五／六連音細分，抖動 0ms</li>
+          <li><b>Full Band 伴奏</b>：6 種曲風、隨機 key，貝斯＋和弦＋鼓</li>
+        </ul>
+        <span class="go">開啟 →</span>
+      </div>
+    </div>
+
+    <div class="card">
+      <h2>先知道這幾件事</h2>
+      <ul class="plain">
+        <li><b>第一次要按「允許」</b> —— 麥克風與鏡頭權限，瀏覽器會問。</li>
+        <li><b>越安靜越準。</b>和弦辨識靠頻譜，背景音樂或電視會嚴重干擾。</li>
+        <li><b>刷完讓它響一下。</b>刷弦瞬間是一團雜訊，要響滿約半拍才判得準。</li>
+        <li><b>和弦選越多越不準。</b>9 個最準，33 個明顯下降 —— 這是取捨，不是 bug。</li>
+        <li><b>姿勢門檻是暫定值。</b>那是幾何運算，不是教學標準，要自己校準。</li>
+      </ul>
+    </div>
+
+    <div class="card warn">
+      <h2 style="margin-bottom:4px">它做不到的事（先說清楚）</h2>
+      <ul class="plain">
+        <li><b>分不出把位。</b>開放 C 和 8 格封閉 C 音級集合一樣，聽起來就是一樣。</li>
+        <li><b>分不出轉位與 Drop voicing。</b>同樣的音換八度排列，音級分布不變。</li>
+        <li><b>某些和弦原理上就分不出。</b>例如 Asus4 與 Dsus2 是<b>完全相同的三個音</b>。</li>
+        <li><b>視覺分不出「按下去」和「懸空」。</b>所以指板偵測要配合聲音判斷。</li>
+      </ul>
+      <p class="note" style="margin:9px 0 0">
+        這些不是還沒做，是<b>用這個方法原理上做不到</b>。與其假裝會，不如講明白。
+      </p>
+    </div>
+
+    <div class="bar" style="justify-content:center;margin-top:6px">
+      <button id="enterApp" class="primary" style="padding:14px 34px;font-size:1rem">開始使用 →</button>
+    </div>
+    <p class="note" style="text-align:center;margin-top:9px">
+      原始碼：<a href="https://github.com/a0936480350/guitar-coach" target="_blank" rel="noopener">github.com/a0936480350/guitar-coach</a>
+    </p>
+  </section>
+
+  <!-- ═══════════ 和弦偵測 ═══════════ -->
+  <section id="paneEar" role="tabpanel" hidden>
     <div class="bar">
       <button id="aStart" class="primary">開始聆聽</button>
       <button id="aStop" disabled>停止</button>
@@ -484,7 +601,7 @@ const FFT = 8192;
 $('cannot').textContent = WRIST_ANGLE_UNAVAILABLE;
 
 // ═══ 分頁 ═══
-const panes = { tabEar:'paneEar', tabEye:'paneEye', tabBoth:'paneBoth', tabEar2:'paneEar2', tabTool:'paneTool' };
+const panes = { tabIntro:'paneIntro', tabEar:'paneEar', tabEye:'paneEye', tabBoth:'paneBoth', tabEar2:'paneEar2', tabTool:'paneTool' };
 Object.keys(panes).forEach(t => $(t).addEventListener('click', () => {
   Object.entries(panes).forEach(([tab,pane]) => {
     const on = tab === t;
@@ -492,6 +609,15 @@ Object.keys(panes).forEach(t => $(t).addEventListener('click', () => {
     $(pane).hidden = !on;
   });
 }));
+
+// 總覽卡片：點卡片直接跳到那個功能
+document.querySelectorAll('.fcard').forEach(card=>{
+  card.tabIndex=0; card.setAttribute('role','button');
+  const go=()=>$(card.dataset.go).click();
+  card.addEventListener('click',go);
+  card.addEventListener('keydown',e=>{ if(e.key==='Enter'||e.key===' '){e.preventDefault();go();} });
+});
+$('enterApp').addEventListener('click',()=>$('tabEar').click());
 
 // ═══ 語音回饋 ═══
 let lastSpoke = 0, lastSpokeText = '';

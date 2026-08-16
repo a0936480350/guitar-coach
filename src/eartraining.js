@@ -50,7 +50,27 @@ export const PROGRESSIONS = [
   { id: 'I-IV-vi-V',   degrees: ['I','IV','vi','V'],  label: 'I – IV – vi – V', note: '' },
 ];
 
-const QUALITY_INTERVALS = { maj: [0,4,7], min: [0,3,7], dim: [0,3,6], dom7: [0,4,7,10] };
+/**
+ * 和弦品質。**分成三組讓使用者自己選範圍** —— 全開的話干擾項會太接近，
+ * 初學者根本分不出來，那不是訓練是折磨。
+ */
+export const QUALITY_INTERVALS = {
+  maj:[0,4,7], min:[0,3,7], dim:[0,3,6], aug:[0,4,8],
+  dom7:[0,4,7,10], min7:[0,3,7,10], maj7:[0,4,7,11], m7b5:[0,3,6,10], dim7:[0,3,6,9],
+  sus2:[0,2,7], sus4:[0,5,7], add9:[0,4,7,14%12],
+  dom9:[0,4,7,10,2], min9:[0,3,7,10,2], maj9:[0,4,7,11,2],
+};
+export const QUALITY_LABEL = {
+  maj:'大三',  min:'小三',  dim:'減三',  aug:'增三',
+  dom7:'屬七', min7:'小七', maj7:'大七', m7b5:'半減七', dim7:'減七',
+  sus2:'sus2', sus4:'sus4', add9:'add9',
+  dom9:'屬九', min9:'小九', maj9:'大九',
+};
+export const CHORD_TIERS = {
+  triad:  { label:'三和弦',   qualities:['maj','min','dim','aug'] },
+  seventh:{ label:'七和弦',   qualities:['maj','min','dom7','min7','maj7','m7b5','dim7'] },
+  ext:    { label:'掛留與延伸', qualities:['maj','min','sus2','sus4','add9','dom9','min9','maj9'] },
+};
 
 /** 可出題的 key */
 export const KEYS = ['C','G','D','A','E','F','Bb'];
@@ -133,8 +153,12 @@ export function makeProgressionQuestion(rnd = Math.random, opts = {}) {
 /** 和弦組成題：聽一個和弦，答出組成音 */
 export function makeChordToneQuestion(rnd = Math.random, opts = {}) {
   const key = opts.key ?? pick(KEYS, rnd);
-  const deg = pick(DEGREES.filter(d => d.quality !== 'dim'), rnd);
-  const ch = degreeToChord(deg.roman, key);
+  const quals = opts.qualities ?? CHORD_TIERS.triad.qualities;
+  const quality = pick(quals, rnd);
+  const root = pc(KEY_ROOT[key] + pick(DEGREES, rnd).offset);
+  const notes = [...new Set(QUALITY_INTERVALS[quality].map(i => pc(root + i)))];
+  const ch = { name: noteName(root) + qualitySuffix(quality), root, notes, quality,
+               roman: QUALITY_LABEL[quality] };
   const correct = ch.notes.map(noteName).join(' · ');
 
   // 干擾項：換掉其中一個音，做出「聽起來很像但不對」的選項
@@ -150,14 +174,20 @@ export function makeChordToneQuestion(rnd = Math.random, opts = {}) {
 
   return {
     type: 'chordtone',
-    key,
+    key, quality,
     play: { chords: [ch.notes.map(n => 48 + n)], mode: 'chords' },
     answer: correct,
     choices,
-    explain: `${ch.name}（${key} 大調的 ${ch.roman} 級）＝ ${correct}`,
+    explain: `${ch.name}（${QUALITY_LABEL[quality]}）＝ ${correct}`,
     notation: { chords: [ch.notes.map(n => 48 + n)], clef: 'treble' },
     guitarAnswer: [ch.name],
   };
+}
+
+function qualitySuffix(q){
+  return { maj:'', min:'m', dim:'dim', aug:'aug', dom7:'7', min7:'m7', maj7:'maj7',
+           m7b5:'m7b5', dim7:'dim7', sus2:'sus2', sus4:'sus4', add9:'add9',
+           dom9:'9', min9:'m9', maj9:'maj9' }[q] ?? '';
 }
 
 function shuffle(arr, rnd) {
@@ -169,13 +199,35 @@ function shuffle(arr, rnd) {
   return a;
 }
 
+/** 和弦品質題：聽一個和弦，答出它是什麼類型（大三/小三/屬七…） */
+export function makeChordQualityQuestion(rnd = Math.random, opts = {}) {
+  const quals = opts.qualities ?? CHORD_TIERS.triad.qualities;
+  const quality = pick(quals, rnd);
+  const root = Math.floor(rnd() * 12);
+  const notes = [...new Set(QUALITY_INTERVALS[quality].map(i => pc(root + i)))];
+  const correct = QUALITY_LABEL[quality];
+  const others = quals.filter(q => q !== quality);
+  const choices = shuffle([correct, ...shuffle(others, rnd).slice(0,3).map(q=>QUALITY_LABEL[q])], rnd);
+  return {
+    type: 'chordquality', quality,
+    play: { chords: [notes.map(n => 48 + n)], mode: 'chords' },
+    answer: correct,
+    choices: [...new Set(choices)],
+    explain: `${noteName(root)}${qualitySuffix(quality)} ＝ ${notes.map(noteName).join(' · ')}`,
+    notation: { chords: [notes.map(n => 48 + n)], clef: 'treble' },
+    guitarAnswer: [noteName(root) + qualitySuffix(quality)],
+  };
+}
+
 export const QUESTION_TYPES = {
   interval:    { label: '音程',       make: makeIntervalQuestion,
                  note: '聽兩個音，答出相距多少。可選上行 / 下行 / 同時發聲。' },
   progression: { label: '和弦進行級數', make: makeProgressionQuestion,
                  note: '聽一段和弦進行，答出級數（如 I–V–vi–IV）。跟 key 無關。' },
   chordtone:   { label: '和弦組成',   make: makeChordToneQuestion,
-                 note: '聽一個和弦，答出它由哪三個音組成。' },
+                 note: '聽一個和弦，答出它由哪些音組成。' },
+  chordquality:{ label: '和弦種類',   make: makeChordQualityQuestion,
+                 note: '聽一個和弦，答出它是大三／小三／屬七…哪一種。' },
 };
 
 /** 產生一題 */
