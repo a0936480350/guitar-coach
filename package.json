@@ -5,7 +5,7 @@
   "type": "module",
   "description": "吉他練習即時回饋 — M0：音訊和弦辨識",
   "scripts": {
-    "test": "node src/selftest.mjs && node src/posture-test.mjs && node src/pitch-test.mjs && node src/ear-test.mjs && node src/notation-test.mjs && node src/rhythm-test.mjs && node src/fretboard-test.mjs && node src/drift-guard.mjs",
+    "test": "node src/selftest.mjs && node src/posture-test.mjs && node src/pitch-test.mjs && node src/ear-test.mjs && node src/notation-test.mjs && node src/rhythm-test.mjs && node src/fretboard-test.mjs && node src/backing-test.mjs && node src/drift-guard.mjs",
     "serve": "npx --yes serve . -l 4173",
     "drift": "node src/drift-guard.mjs"
   }

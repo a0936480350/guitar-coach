@@ -122,6 +122,28 @@
   .score span{font-size:.68rem;color:var(--muted)}
   .staff{background:#f7f8fa;border-radius:9px;padding:8px;margin-top:12px;overflow-x:auto}
   .staff svg{display:block}
+  .calibsteps{list-style:none;padding:0;margin:12px 0 0;counter-reset:c}
+  .calibsteps li{padding:9px 12px;border-radius:8px;background:var(--panel-2);margin-bottom:6px;
+                 font-size:.86rem;color:var(--muted);border:1px solid transparent}
+  .calibsteps li b{display:inline-block;width:20px;height:20px;line-height:20px;text-align:center;
+                   border-radius:50%;background:var(--line);margin-right:9px;font-size:.72rem}
+  .calibsteps li.done{color:var(--ok);border-color:#20452e;background:#132419}
+  .calibsteps li.done b{background:var(--ok);color:#04160c}
+  .calibsteps li.now{color:var(--wait);border-color:#5a4420;background:#211a10}
+  .calibsteps li.now b{background:var(--wait);color:#1b1206}
+  .fretnote{display:grid;grid-template-columns:repeat(auto-fit,minmax(104px,1fr));gap:8px;margin-top:12px}
+  .fretnote div{background:var(--panel-2);border-radius:8px;padding:10px;text-align:center;
+                border:1px solid var(--line)}
+  .fretnote b{display:block;font-family:var(--mono);font-size:1.35rem;color:var(--ok)}
+  .fretnote span{font-size:.68rem;color:var(--muted)}
+  .progbars{display:flex;flex-wrap:wrap;gap:6px;margin-top:12px}
+  .progbars .bar{flex:0 0 auto;min-width:56px;text-align:center;padding:8px 6px;border-radius:8px;
+                 background:var(--panel-2);border:1px solid var(--line);transition:background .1s}
+  .progbars .bar.on{background:var(--brand);border-color:var(--brand)}
+  .progbars .bar b{display:block;font-family:var(--mono);font-size:.95rem;color:var(--ink)}
+  .progbars .bar.on b{color:#06121b}
+  .progbars .bar span{font-size:.66rem;color:var(--muted)}
+  .progbars .bar.on span{color:#06121b}
   [hidden]{display:none !important}
   details summary{cursor:pointer;font-weight:700;font-size:.92rem}
   a{color:var(--brand)}
@@ -227,7 +249,35 @@
       <div class="camwrap"><video id="cam" playsinline muted></video><canvas id="draw"></canvas></div>
       <ul class="issues" id="issues"><li class="clean">尚未偵測</li></ul>
       <div class="metrics" id="metrics"></div>
+      <div class="fretnote" id="fretNote"></div>
     </div>
+
+    <div class="card">
+      <h2>指板校準</h2>
+      <p class="note" style="margin:0 0 4px">
+        校準之後，程式就能算出你按在<b>第幾弦第幾格、是什麼音</b>。
+      </p>
+      <p class="note" style="margin:0">
+        原理：你點四個角，程式求出一個「畫面 → 指板」的投影變換。
+        <b>不需要程式自己找琴頸</b>，所以不是研究等級的難題。
+      </p>
+
+      <div class="bar" style="margin:12px 0 0">
+        <button id="cStart" class="primary">開始校準</button>
+        <button id="cReset" disabled>重設</button>
+        <span id="cStatus" class="hint">尚未校準</span>
+      </div>
+
+      <ol class="calibsteps" id="cSteps"></ol>
+
+      <div class="note warn card" style="margin:12px 0 0;padding:13px">
+        <b>限制（先講清楚）：</b>校準後<b>相機不能移動、吉他不要大幅晃動</b>，
+        不然座標就跑掉了。手掌擋住指尖時會抓不到。
+        而且視覺<b>分不出「按下去」和「手指懸在上面」</b> ——
+        所以下面會用聲音交叉驗證：有聲音才算真的按了。
+      </div>
+    </div>
+
 
     <div class="card">
       <h2>門檻校準</h2>
@@ -372,6 +422,25 @@
       <div class="beat" id="dBeat"></div>
       <p class="note" id="dNote" style="margin:10px 0 0"></p>
     </div>
+
+    <div class="card">
+      <h2>Full Band 伴奏</h2>
+      <p class="note" style="margin:0">貝斯＋和弦襯底＋鼓，隨機 key。拿來練 solo 或和弦轉換。</p>
+      <div class="targets" id="bkStyles" style="margin-top:10px"></div>
+      <div class="bar" style="margin:12px 0 0">
+        <button id="bkToggle" class="primary">開始</button>
+        <button id="bkNew">換一組</button>
+        <label class="hint">Key
+          <select id="bkKey" style="margin-left:5px">
+            <option value="random">隨機</option>
+          </select>
+        </label>
+        <span id="bkStatus" class="hint">停止中</span>
+      </div>
+      <p class="hint" id="bkInfo" style="margin:11px 0 0"></p>
+      <div class="progbars" id="bkProg"></div>
+      <p class="note" id="bkNote" style="margin:10px 0 0"></p>
+    </div>
   </section>
 
   <div class="card">
@@ -402,10 +471,13 @@
 <script type="module">
 import { computeChroma, identify, chordNotes, CHORD_TEMPLATES, NOTE_NAMES, CHORD_SETS, setChordSet, ambiguousWith } from './src/chroma.js';
 import { analyse, DEFAULT_RULES, WRIST_ANGLE_UNAVAILABLE, LM } from './src/posture.js';
+import { computeHomography, applyHomography, locate, validateCalibration,
+         TARGET_RECT, CALIB_STEPS, fretToX } from './src/fretboard.js';
 import { yin, freqToNote, nearestString, STANDARD_TUNING, Smoother, Hysteresis, midiToFreq } from './src/pitch.js';
 import { makeQuestion, QUESTION_TYPES } from './src/eartraining.js';
 import { renderNotation } from './src/notation.js';
 import { SUBDIVISIONS, clickGrid, DRUM_STYLES, drumGrid } from './src/rhythm.js';
+import { BACKING_STYLES, generateBacking, KEYS as BK_KEYS } from './src/backing.js';
 
 const $ = id => document.getElementById(id);
 const FFT = 8192;
@@ -709,6 +781,43 @@ function visionLoop(){
   g.fillStyle='#4ec98a';
   hand.forEach(p=>{g.beginPath();g.arc(p.x*c.width,p.y*c.height,4,0,7);g.fill();});
 
+  // 校準點與指板格線
+  if(calibPts.length){
+    g.fillStyle='#e3a95f';
+    calibPts.forEach((p,i)=>{
+      const px=p.x*c.width, py=p.y*c.height;
+      g.beginPath(); g.arc(px,py,7,0,7); g.fill();
+      g.fillStyle='#0b0e13'; g.font='bold 11px monospace'; g.textAlign='center';
+      g.fillText(String(i+1),px,py+4); g.fillStyle='#e3a95f';
+    });
+    if(calibPts.length===4){
+      g.strokeStyle='#4ec98a'; g.lineWidth=2;
+      g.beginPath();
+      [0,1,3,2].forEach((idx,k)=>{const p=calibPts[idx];
+        k===0?g.moveTo(p.x*c.width,p.y*c.height):g.lineTo(p.x*c.width,p.y*c.height);});
+      g.closePath(); g.stroke();
+    }
+  }
+
+  // 指尖按在哪 —— 需要校準過，且要有聲音佐證（視覺分不出按下去還是懸空）
+  if(calibH){
+    const tips=[{i:8,n:'食指'},{i:12,n:'中指'},{i:16,n:'無名'},{i:20,n:'小指'}];
+    const found=[];
+    tips.forEach(({i,n})=>{
+      const r=locate(calibH,{x:hand[i].x,y:hand[i].y});
+      if(r.ok && r.fret>0){
+        found.push(`<div><b>${r.note}${r.octave}</b><span>${n}：第${r.string+1}弦 第${r.fret}格</span></div>`);
+        const px=hand[i].x*c.width, py=hand[i].y*c.height;
+        g.strokeStyle='#4ec98a'; g.lineWidth=2;
+        g.beginPath(); g.arc(px,py,11,0,7); g.stroke();
+      }
+    });
+    $('fretNote').innerHTML = found.length ? found.join('')
+      : '<div style="grid-column:1/-1;color:var(--muted);font-size:.82rem">手指不在指板上，或都在空弦位置</div>';
+  } else {
+    $('fretNote').innerHTML='<div style="grid-column:1/-1;color:var(--muted);font-size:.82rem">尚未校準 — 按上面的「開始校準」</div>';
+  }
+
   const a = analyse(hand, RULES);
   eyeOK = a.ok && a.issues.length===0;
   $('bEye').style.width = eyeOK?'100%':'25%';
@@ -733,6 +842,61 @@ function visionLoop(){
 }
 $('vStart').addEventListener('click',visionStart);
 $('vStop').addEventListener('click',visionStop);
+
+// ═══════════════ 指板校準 ═══════════════
+// 四點校準求單應性變換。相機不動的前提下，指尖座標就能換算成弦與格。
+let calibPts=[], calibH=null, calibMode=false;
+
+function renderSteps(){
+  $('cSteps').innerHTML = CALIB_STEPS.map((txt,i)=>{
+    const done = i < calibPts.length;
+    const now  = calibMode && i === calibPts.length;
+    const cls  = done ? 'done' : now ? 'now' : '';
+    return `<li class="${cls}"><b>${i+1}</b>${txt}${done?'　✓':now?'　← 現在點這裡':''}</li>`;
+  }).join('');
+}
+renderSteps();
+
+function startCalib(){
+  if(!camStream){ $('cStatus').textContent='請先開啟鏡頭'; return; }
+  calibMode=true; calibPts=[]; calibH=null;
+  $('cReset').disabled=false;
+  $('cStatus').textContent='點畫面上的第 1 個位置';
+  renderSteps();
+}
+function resetCalib(){
+  calibMode=false; calibPts=[]; calibH=null;
+  $('cStatus').textContent='已重設'; $('cReset').disabled=true;
+  renderSteps();
+}
+$('cStart').addEventListener('click',startCalib);
+$('cReset').addEventListener('click',resetCalib);
+
+// 點畫面收集校準點。畫面是鏡像的（scaleX(-1)），所以 x 要翻回來
+$('draw').addEventListener('click', e => {
+  if(!calibMode) return;
+  const r = e.currentTarget.getBoundingClientRect();
+  const x = 1 - (e.clientX - r.left) / r.width;      // 鏡像修正
+  const y = (e.clientY - r.top) / r.height;
+  calibPts.push({x,y});
+  renderSteps();
+
+  if(calibPts.length < 4){
+    $('cStatus').textContent = `點畫面上的第 ${calibPts.length+1} 個位置`;
+    return;
+  }
+  const v = validateCalibration(calibPts);
+  if(!v.ok){
+    $('cStatus').textContent = '校準失敗：' + v.why + ' —— 請重新點';
+    calibPts=[]; renderSteps(); return;
+  }
+  calibH = computeHomography(calibPts, TARGET_RECT);
+  calibMode=false;
+  $('cStatus').textContent = '校準完成 — 現在會顯示你按的音';
+  renderSteps();
+  logIt('指板校準完成');
+});
+
 
 // ═══════════════ 合併練習 ═══════════════
 const SEQ=['Em','Am','G','C','D'];
@@ -1154,6 +1318,115 @@ function drumStop(){
   [...$('dBeat').children].forEach(d=>d.classList.remove('on'));
 }
 $('dToggle').addEventListener('click',()=>{ dOn?drumStop():drumStart(); });
+
+// ═══════════════ Full band 伴奏 ═══════════════
+// backing.js 只產生事件資料（time 以「拍」為單位），發聲在這裡做。
+let bkCtx=null, bkOn=false, bkTimer=0, bkData=null, bkStart=0, bkIdx=0, bkLoop=0;
+let bkStyle=Object.keys(BACKING_STYLES)[0];   // 不寫死字串 —— 模組改了 key 也不會壞
+
+Object.entries(BACKING_STYLES).forEach(([k,v])=>{
+  const b=document.createElement('button');
+  b.className='chip'; b.type='button'; b.style.minWidth='auto'; b.textContent=v.label;
+  b.setAttribute('aria-pressed',String(k===bkStyle));
+  b.addEventListener('click',()=>{
+    bkStyle=k;
+    document.querySelectorAll('#bkStyles .chip').forEach(x=>x.setAttribute('aria-pressed','false'));
+    b.setAttribute('aria-pressed','true');
+    if(bkOn){ backingStop(); backingStart(); } else newBacking();
+  });
+  $('bkStyles').appendChild(b);
+});
+
+function newBacking(){
+  // ⚠ 用 Math.random 而不是遞增 seed —— makeRng 是 LCG，相鄰 seed 的第一次
+  // 抽樣幾乎相同（agent 實測 seed 1~10 全抽到同一個 key）。
+  const forced = $('bkKey').value;
+  bkData = generateBacking(bkStyle, forced==='random' ? {} : { key: forced });
+  $('bkInfo').textContent =
+    `${bkData.style.label}　key = ${bkData.key}　${bkData.bpm} BPM　${bkData.totalBars} 小節`;
+  $('bkProg').innerHTML = bkData.bars
+    .map(b=>`<span class="bar"><b>${b.chordName}</b><span>${b.roman}</span></span>`).join('');
+  $('bkNote').textContent = bkData.style.note || '';
+  return bkData;
+}
+
+function bkVoice(time, midi, dur, kind){
+  const o=bkCtx.createOscillator(), g=bkCtx.createGain(), f=bkCtx.createBiquadFilter();
+  const hz=440*Math.pow(2,(midi-69)/12);
+  o.frequency.value=hz;
+  if(kind==='bass'){ o.type='triangle'; f.type='lowpass'; f.frequency.value=900; }
+  else { o.type='sawtooth'; f.type='lowpass'; f.frequency.value=2600; }
+  const vol = kind==='bass' ? 0.34 : 0.10;
+  g.gain.setValueAtTime(0,time);
+  g.gain.linearRampToValueAtTime(vol,time+0.012);
+  g.gain.setValueAtTime(vol,time+dur*0.6);
+  g.gain.exponentialRampToValueAtTime(0.0001,time+dur);
+  o.connect(f); f.connect(g); g.connect(bkCtx.destination);
+  o.start(time); o.stop(time+dur+0.05);
+}
+function bkNoise(time,dur,freq,q,vol){
+  const len=Math.max(1,Math.floor(bkCtx.sampleRate*dur));
+  const buf=bkCtx.createBuffer(1,len,bkCtx.sampleRate);
+  const d=buf.getChannelData(0);
+  for(let i=0;i<len;i++) d[i]=(Math.random()*2-1)*Math.pow(1-i/len,2);
+  const src=bkCtx.createBufferSource(); src.buffer=buf;
+  const f=bkCtx.createBiquadFilter(); f.type='bandpass'; f.frequency.value=freq; f.Q.value=q;
+  const g=bkCtx.createGain(); g.gain.value=vol;
+  src.connect(f); f.connect(g); g.connect(bkCtx.destination); src.start(time);
+}
+function bkDrum(time,drum){
+  if(drum==='kick'){
+    const o=bkCtx.createOscillator(), g=bkCtx.createGain();
+    o.frequency.setValueAtTime(140,time);
+    o.frequency.exponentialRampToValueAtTime(45,time+0.11);
+    g.gain.setValueAtTime(0.7,time); g.gain.exponentialRampToValueAtTime(0.0001,time+0.22);
+    o.connect(g); g.connect(bkCtx.destination); o.start(time); o.stop(time+0.24);
+  } else if(drum==='snare'){
+    bkNoise(time,0.13,1900,0.7,0.34);
+  } else bkNoise(time,0.04,9000,1.2,0.13);
+}
+function bkScheduler(){
+  const spb=60/bkData.bpm, cycle=bkData.totalBeats*spb;
+  while(true){
+    const ev=bkData.events[bkIdx];
+    const t=bkStart+bkLoop*cycle+ev.time*spb;
+    if(t >= bkCtx.currentTime+0.12) break;
+    if(ev.type==='drum') bkDrum(t,ev.drum);
+    else bkVoice(t,ev.midi,ev.dur*spb,ev.type);
+    // 小節指示
+    if(ev.type==='bass'){
+      const delay=Math.max(0,(t-bkCtx.currentTime)*1000);
+      setTimeout(()=>{
+        [...$('bkProg').children].forEach((el,i)=>el.classList.toggle('on',i===ev.bar));
+      },delay);
+    }
+    bkIdx++;
+    if(bkIdx>=bkData.events.length){ bkIdx=0; bkLoop++; }
+  }
+}
+async function backingStart(){
+  if(!bkData || bkData.style.id!==bkStyle) newBacking();
+  bkCtx=new (window.AudioContext||window.webkitAudioContext)();
+  if(bkCtx.state==='suspended') await bkCtx.resume();
+  bkIdx=0; bkLoop=0; bkStart=bkCtx.currentTime+0.12;
+  bkOn=true; bkTimer=setInterval(bkScheduler,25);
+  $('bkToggle').textContent='停止';
+  $('bkStatus').textContent=`播放中 · key ${bkData.key} · ${bkData.bpm} BPM`;
+}
+function backingStop(){
+  bkOn=false; clearInterval(bkTimer);
+  if(bkCtx) bkCtx.close(); bkCtx=null;
+  $('bkToggle').textContent='開始'; $('bkStatus').textContent='停止中';
+  [...$('bkProg').children].forEach(el=>el.classList.remove('on'));
+}
+$('bkToggle').addEventListener('click',()=>{ bkOn?backingStop():backingStart(); });
+$('bkNew').addEventListener('click',()=>{
+  const was=bkOn; if(was) backingStop();
+  newBacking(); if(was) backingStart();
+});
+$('bkKey').addEventListener('change',()=>{ const was=bkOn; if(was) backingStop();
+  newBacking(); if(was) backingStart(); });
+newBacking();
 
 // ═══ 核心自我檢查 ═══
 (() => {
