@@ -152,9 +152,29 @@
     </div>
 
     <div class="card">
-      <div class="lbl">練習目標</div>
+      <div class="lbl">和弦範圍</div>
+      <div class="targets" id="chordSets"></div>
+      <p class="note" id="chordSetNote" style="margin:8px 0 0"></p>
+      <div class="lbl" style="margin-top:14px">練習目標</div>
       <div class="targets" id="targets"></div>
       <div class="hint" id="wantNotes" style="margin-top:8px"></div>
+    </div>
+
+    <div class="card">
+      <div class="lbl">單音 / Solo</div>
+      <p class="note" style="margin:4px 0 0">
+        彈單一個音時會自動切成單音模式，顯示音名與音分偏差；刷和弦時自動切回和弦判定。
+      </p>
+      <div class="main" style="margin-top:11px">
+        <div>
+          <div id="soloNote" class="big wait" style="font-size:2.6rem">—</div>
+          <div id="soloInfo" class="hint">尚未偵測到單音</div>
+        </div>
+        <div>
+          <div class="lbl">目前模式</div>
+          <div id="modeNow" class="say" style="color:var(--muted);margin-top:4px">—</div>
+        </div>
+      </div>
     </div>
 
     <div class="card">
@@ -380,7 +400,7 @@
 </div>
 
 <script type="module">
-import { computeChroma, identify, chordNotes, CHORD_TEMPLATES, NOTE_NAMES } from './src/chroma.js';
+import { computeChroma, identify, chordNotes, CHORD_TEMPLATES, NOTE_NAMES, CHORD_SETS, setChordSet, ambiguousWith } from './src/chroma.js';
 import { analyse, DEFAULT_RULES, WRIST_ANGLE_UNAVAILABLE, LM } from './src/posture.js';
 import { yin, freqToNote, nearestString, STANDARD_TUNING, Smoother, Hysteresis, midiToFreq } from './src/pitch.js';
 import { makeQuestion, QUESTION_TYPES } from './src/eartraining.js';
@@ -439,18 +459,40 @@ $('copy').addEventListener('click', async () => {
 
 // ═══════════════ 聽力 ═══════════════
 let target = 'Em';
-const chips = {};
-Object.keys(CHORD_TEMPLATES).forEach(name => {
-  const b = document.createElement('button');
-  b.className='chip'; b.textContent=name; b.type='button';
-  b.setAttribute('aria-pressed', String(name===target));
-  b.addEventListener('click', () => {
-    target = name;
-    Object.entries(chips).forEach(([n,el])=>el.setAttribute('aria-pressed',String(n===name)));
-    paintTarget(); resetHold();
+// ── 和弦範圍切換（偵測端也全開）────────────────────────────────────────────
+function rebuildTargets(){
+  $('targets').innerHTML='';
+  Object.keys(CHORD_TEMPLATES).forEach(name=>{
+    const b=document.createElement('button');
+    b.className='chip'; b.textContent=name; b.type='button'; b.style.minWidth='auto';
+    b.setAttribute('aria-pressed',String(name===target));
+    b.addEventListener('click',()=>{
+      target=name;
+      document.querySelectorAll('#targets .chip').forEach(x=>x.setAttribute('aria-pressed','false'));
+      b.setAttribute('aria-pressed','true');
+      paintTarget(); resetHold();
+    });
+    $('targets').appendChild(b);
   });
-  chips[name]=b; $('targets').appendChild(b);
+}
+let curSet='basic';
+Object.entries(CHORD_SETS).forEach(([k,v])=>{
+  const b=document.createElement('button');
+  b.className='chip'; b.type='button'; b.style.minWidth='auto'; b.textContent=v.label;
+  b.setAttribute('aria-pressed',String(k===curSet));
+  b.addEventListener('click',()=>{
+    curSet=k; setChordSet(k);
+    document.querySelectorAll('#chordSets .chip').forEach(x=>x.setAttribute('aria-pressed','false'));
+    b.setAttribute('aria-pressed','true');
+    $('chordSetNote').textContent=v.note+`（共 ${Object.keys(CHORD_SETS[k].spec).length} 個）`;
+    if(!CHORD_TEMPLATES[target]) target=Object.keys(CHORD_TEMPLATES)[0];
+    rebuildTargets(); paintTarget(); resetHold();
+  });
+  $('chordSets').appendChild(b);
 });
+$('chordSetNote').textContent=CHORD_SETS.basic.note+'（共 9 個）';
+rebuildTargets();
+
 const cols=[], labels=[];
 NOTE_NAMES.forEach(n => {
   const w=document.createElement('div');
@@ -478,6 +520,7 @@ let earOK=false;   // 給合併模式讀
 const smoother = new Smoother(24, 12);
 const hyst = new Hysteresis(0.05, 8);
 let lastScore = 0;
+let timeBuf=null;
 function resetHold(){holdCount=0;holdChord=null;lastLogged=null;earOK=false;lastScore=0;
   smoother.reset(); hyst.reset(); $('hold').style.width='0%';}
 
@@ -513,6 +556,9 @@ function audioLoop(){
   if(!analyser) return;
   if(!spec||spec.length!==analyser.frequencyBinCount) spec=new Float32Array(analyser.frequencyBinCount);
   analyser.getFloatFrequencyData(spec);
+  // 單音 / 和弦自動切換：YIN 的 clarity 高代表訊號接近單一週期 = 單音
+  if(!timeBuf||timeBuf.length!==analyser.fftSize) timeBuf=new Float32Array(analyser.fftSize);
+  analyser.getFloatTimeDomainData(timeBuf);
   const mag=new Float32Array(spec.length); let energy=0;
   for(let i=0;i<spec.length;i++){const v=spec[i]>-100?Math.pow(10,spec[i]/20):0;mag[i]=v;energy+=v;}
   $('vol').style.width=Math.min(100,energy*2200)+'%';
@@ -521,6 +567,22 @@ function audioLoop(){
     $('say').textContent='太安靜 — 刷一下和弦'; $('say').style.color='var(--muted)';
     cols.forEach(c=>c.fill.style.height='0%'); resetHold(); return;
   }
+  // 先判斷是單音還是和弦
+  const py=yin(timeBuf, sr);
+  const mono = py.freq>0 && py.clarity>0.82;
+  $('modeNow').textContent = mono ? '單音 / Solo' : '和弦';
+  $('modeNow').style.color = mono ? 'var(--brand)' : 'var(--ok)';
+  if(mono){
+    const n=freqToNote(py.freq), st=nearestString(py.freq);
+    $('soloNote').textContent=n.name+n.octave;
+    $('soloNote').className='big '+(n.inTune?'ok':'hold');
+    $('soloInfo').textContent=
+      `${py.freq.toFixed(1)}Hz　${n.cents>0?'+':''}${n.cents.toFixed(0)} 音分　最接近第 ${st.label} 弦　清晰度 ${py.clarity.toFixed(2)}`;
+  } else {
+    $('soloNote').textContent='—'; $('soloNote').className='big wait';
+    $('soloInfo').textContent='目前是和弦（多個音同時響）';
+  }
+
   const raw=computeChroma(mag,sr,FFT);
   const ch=smoother.push(raw);            // ← 時間平滑，這是修掉閃爍的關鍵
   cols.forEach((c,i)=>c.fill.style.height=(ch[i]*100).toFixed(1)+'%');
@@ -550,7 +612,9 @@ function audioLoop(){
     if(lastLogged!==r.chord){logIt(`聽力 目標=${target} 聽到=${r.chord} ✗ 分數=${r.score.toFixed(3)} 領先=${r.margin.toFixed(3)}`);lastLogged=r.chord;
       speak(`聽起來像 ${r.chord}`, $('speak1').checked);}
   }
-  $('nums').textContent=`分數 ${r.score.toFixed(3)}　領先 ${r.margin.toFixed(3)}　穩定 ${holdCount}/${NEED_HOLD}`;
+  const amb=ambiguousWith(r.chord);
+  $('nums').textContent=`分數 ${r.score.toFixed(3)}　領先 ${r.margin.toFixed(3)}　穩定 ${holdCount}/${NEED_HOLD}`
+    + (amb.length?`　⚠ 與 ${amb.join('/')} 音級完全相同，原理上分不出`:'');
 }
 function demo(){
   const a=new (window.AudioContext||window.webkitAudioContext)();
