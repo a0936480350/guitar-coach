@@ -81,3 +81,18 @@ MediaPipe 回傳的是 21 個關鍵點在**畫面上的 2D 正規化座標**。
 這對 side project 特別重要：改動後不用每次都拿起吉他才知道有沒有壞掉。
 
 **代價**：多一層抽象。但這裡的抽象是真的有用途，不是為了漂亮。
+
+---
+
+## 已升級為跨專案 ADR
+
+D-0001 與 D-0002 的核心洞察（**護城河是規則怎麼定義，不是偵測技術**）
+在 2026-08-16 與 `elastic-band-coach`（iOS，Mac 端 session 開發的長輩運動 App）
+獨立得到相同結論 —— 不同平台（Swift/Vision vs JS/MediaPipe）、不同領域
+（復健訓練 vs 吉他教學），卻收斂到同一個非顯而易見的判斷。
+
+依 ADR-0003 的 local-vs-global 規則升級成
+**`xian-knowledge-os/decisions/ADR-0008-pose-coaching-rules-are-the-moat.md`**。
+
+本檔的 D-0001／D-0002 保留，因為它們仍是這個產品自己的決策脈絡；
+ADR-0008 記的是抽出來、對其他專案也成立的那一層。
