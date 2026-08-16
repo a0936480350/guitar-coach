@@ -9,7 +9,7 @@ console.log('Full band 伴奏產生器測試\n');
 
 // ── 樂理正確性：獨立算一次大調音階，不靠 degreeToChord 自己驗自己 ────────────
 // 這是最重要的一段，和弦組成音錯了會直接教錯學生。
-const KEY_ROOT = { 'C':0, 'G':7, 'D':2, 'A':9, 'E':4, 'F':5, 'Bb':10 };
+const KEY_ROOT = { 'C':0,'Db':1,'D':2,'Eb':3,'E':4,'F':5,'F#':6,'G':7,'Ab':8,'A':9,'Bb':10,'B':11 };
 const SCALE = [0, 2, 4, 5, 7, 9, 11];                 // 大調音階半音位置
 const DEG_INDEX = { I:0, ii:1, iii:2, IV:3, V:4, vi:5, vii:6 };
 const DEG_QUALITY = { I:'maj', ii:'min', iii:'min', IV:'maj', V:'maj', vi:'min', vii:'dim' };
@@ -17,6 +17,7 @@ const TRIAD = { maj:[0,4,7], min:[0,3,7], dim:[0,3,6] };
 const pcOf = n => ((n % 12) + 12) % 12;
 
 function expectedNotes(roman, key) {
+  if (KEY_ROOT[key] === undefined) throw new Error('測試的 KEY_ROOT 沒有 ' + key + ' —— 對照表沒跟上 eartraining.js 的 KEYS');
   const root = pcOf(KEY_ROOT[key] + SCALE[DEG_INDEX[roman]]);
   return TRIAD[DEG_QUALITY[roman]].map(i => pcOf(root + i)).sort((a, b) => a - b);
 }

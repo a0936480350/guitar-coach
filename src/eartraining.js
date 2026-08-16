@@ -72,9 +72,14 @@ export const CHORD_TIERS = {
   ext:    { label:'掛留與延伸', qualities:['maj','min','sus2','sus4','add9','dom9','min9','maj9'] },
 };
 
-/** 可出題的 key */
-export const KEYS = ['C','G','D','A','E','F','Bb'];
-const KEY_ROOT = { 'C':0, 'G':7, 'D':2, 'A':9, 'E':4, 'F':5, 'Bb':10 };
+/**
+ * 全部 12 個 key。
+ * 原本只放 7 個吉他常用調 —— 但那是「和弦好按」的考量，
+ * 聽力訓練與伴奏沒有這個限制，限制反而讓耳朵只熟悉幾個調。
+ * 用降記號寫升號調的關係調，符合實際樂譜習慣（Eb 而不是 D#）。
+ */
+export const KEYS = ['C','Db','D','Eb','E','F','F#','G','Ab','A','Bb','B'];
+const KEY_ROOT = { 'C':0,'Db':1,'D':2,'Eb':3,'E':4,'F':5,'F#':6,'G':7,'Ab':8,'A':9,'Bb':10,'B':11 };
 
 const pc = n => ((n % 12) + 12) % 12;
 export const noteName = n => NOTE_NAMES[pc(n)];

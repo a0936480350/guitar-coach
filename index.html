@@ -801,6 +801,8 @@ td{padding:8px 10px 8px 0;border-top:1px solid var(--line);color:var(--cream-2)}
         </label>
         <span id="bkStatus" class="hint">停止中</span>
       </div>
+      <div class="slider"><span class="lbl">BPM</span>
+        <input id="bkBpm" type="range" min="40" max="220" step="1" value="100" /><output id="bkBpmOut">100</output></div>
       <p class="hint" id="bkInfo" style="margin:11px 0 0"></p>
       <div class="progbars" id="bkProg"></div>
       <p class="note" id="bkNote" style="margin:10px 0 0"></p>
@@ -1673,7 +1675,7 @@ function buildBeatUI(){
 buildBeatUI();
 $('mBpm').addEventListener('input',e=>{BPM=+e.target.value;$('mBpmOut').textContent=BPM;});
 
-function tick(time, accent){
+function tick(time, accent, beatIdx){
   const o=mctx.createOscillator(), g=mctx.createGain();
   // 三段音高與音量：小節重音最高最大、拍點次之、細分最輕
   o.frequency.value = accent==='bar'?1800 : accent==='beat'?1200 : 800;
@@ -1683,7 +1685,7 @@ function tick(time, accent){
   g.gain.exponentialRampToValueAtTime(0.0001,time+(accent==='sub'?0.035:0.06));
   o.connect(g); g.connect(mctx.destination); o.start(time); o.stop(time+0.08);
   if(accent!=='sub'){
-    const idx=Math.round(mIdx)%BEATS, delay=Math.max(0,(time-mctx.currentTime)*1000);
+    const idx=beatIdx%BEATS, delay=Math.max(0,(time-mctx.currentTime)*1000);
     setTimeout(()=>{const e=$('mBeat').children[idx];
       if(e){e.classList.add('on');setTimeout(()=>e.classList.remove('on'),90);}},delay);
   }
@@ -1693,8 +1695,9 @@ function scheduler(){
   const spb=60/BPM;
   while(mNext < mctx.currentTime + LOOKAHEAD){
     const ev=mGrid[mGi];
-    tick(mNext, ev.accent);
-    mIdx=Math.floor(ev.beat);
+    // ⚠ 曾經的 bug：mIdx 在 tick() 之後才更新，所以燈永遠亮「前一拍」。
+    // 改成把拍序直接傳進去，不靠外部可變狀態。
+    tick(mNext, ev.accent, Math.floor(ev.beat));
     mGi++;
     if(mGi>=mGrid.length){ mGi=0; mBarStart+=BEATS*spb; }
     mNext = mBarStart + mGrid[mGi].beat*spb;
@@ -1784,7 +1787,8 @@ $('dToggle').addEventListener('click',()=>{ dOn?drumStop():drumStart(); });
 // ═══════════════ Full band 伴奏 ═══════════════
 // backing.js 只產生事件資料（time 以「拍」為單位），發聲在這裡做。
 let bkCtx=null, bkOn=false, bkTimer=0, bkData=null, bkStart=0, bkIdx=0, bkLoop=0;
-let bkStyle=Object.keys(BACKING_STYLES)[0];   // 不寫死字串 —— 模組改了 key 也不會壞
+let bkStyle=Object.keys(BACKING_STYLES)[0];
+let bkBpmOverride=null;   // 使用者手動指定的 BPM，null = 用曲風預設   // 不寫死字串 —— 模組改了 key 也不會壞
 
 Object.entries(BACKING_STYLES).forEach(([k,v])=>{
   const b=document.createElement('button');
@@ -1794,6 +1798,7 @@ Object.entries(BACKING_STYLES).forEach(([k,v])=>{
     bkStyle=k;
     document.querySelectorAll('#bkStyles .chip').forEach(x=>x.setAttribute('aria-pressed','false'));
     b.setAttribute('aria-pressed','true');
+    $('bkBpm').value=v.bpm; $('bkBpmOut').textContent=v.bpm; bkBpmOverride=v.bpm;
     if(bkOn){ backingStop(); backingStart(); } else newBacking();
   });
   $('bkStyles').appendChild(b);
@@ -1804,6 +1809,7 @@ function newBacking(){
   // 抽樣幾乎相同（agent 實測 seed 1~10 全抽到同一個 key）。
   const forced = $('bkKey').value;
   bkData = generateBacking(bkStyle, forced==='random' ? {} : { key: forced });
+  if(bkBpmOverride) bkData.bpm = bkBpmOverride;
   $('bkInfo').textContent =
     `${bkData.style.label}　key = ${bkData.key}　${bkData.bpm} BPM　${bkData.totalBars} 小節`;
   $('bkProg').innerHTML = bkData.bars
@@ -1814,9 +1820,19 @@ function newBacking(){
 
 function bkVoice(time, midi, dur, kind){
   // Karplus-Strong 撥弦，不是振盪器 —— 這是「不像 MIDI」的關鍵
-  const h = humanize(time, kind==='bass' ? 0.34 : 0.13);
-  pluck(bkCtx, rev(), h.time, midiToHz(midi), Math.max(dur, 0.45), h.vel,
-        kind==='bass' ? { damping:0.30, bright:0.35 } : { damping:0.55, bright:0.62 });
+  const h = humanize(time, kind==='bass' ? 0.40 : 0.14);
+  const len = Math.max(dur, 0.5);
+  if(kind === 'bass'){
+    // 貝斯：本音 + 低八度墊底，撥弦感才有重量
+    pluck(bkCtx, rev(), h.time, midiToHz(midi), len, h.vel, { damping:0.22, bright:0.30 });
+    pluck(bkCtx, rev(), h.time+0.004, midiToHz(midi-12), len*0.8, h.vel*0.32,
+          { damping:0.18, bright:0.18 });
+  } else {
+    // 和弦：每個音略微錯開（真人刷弦不會同時），加高八度增加光澤
+    pluck(bkCtx, rev(), h.time, midiToHz(midi), len, h.vel, { damping:0.48, bright:0.58 });
+    pluck(bkCtx, rev(), h.time+0.009, midiToHz(midi+12), len*0.75, h.vel*0.38,
+          { damping:0.62, bright:0.72 });
+  }
 }
 function bkDrum(time,drum){ const h=humanize(time,1); drumHit(bkCtx, rev(), h.time, drum, h.vel); }
 function bkScheduler(){
@@ -1861,6 +1877,24 @@ $('bkNew').addEventListener('click',()=>{
 });
 $('bkKey').addEventListener('change',()=>{ const was=bkOn; if(was) backingStop();
   newBacking(); if(was) backingStart(); });
+
+// 填入全部 12 個 key
+BK_KEYS.forEach(k=>{ const o=document.createElement('option'); o.value=o.textContent=k; $('bkKey').appendChild(o); });
+if($('bkKey').options.length !== BK_KEYS.length + 1)
+  console.error('伴奏 key 下拉沒填滿：', $('bkKey').options.length, '應為', BK_KEYS.length+1);
+
+// 伴奏 BPM 可調（曲風有預設值，使用者調過就以使用者為準）
+$('bkBpm').addEventListener('input', e => {
+  bkBpmOverride = +e.target.value;
+  $('bkBpmOut').textContent = bkBpmOverride;
+  if(bkData){
+    bkData.bpm = bkBpmOverride;
+    $('bkInfo').textContent =
+      `${bkData.style.label}　key = ${bkData.key}　${bkData.bpm} BPM　${bkData.totalBars} 小節`;
+    if(bkOn){ backingStop(); backingStart(); }
+  }
+});
+
 newBacking();
 
 // ═══ 核心自我檢查 ═══
