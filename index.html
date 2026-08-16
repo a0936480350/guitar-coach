@@ -111,6 +111,17 @@
   .beat div{flex:1;height:36px;border-radius:7px;background:var(--panel-2);transition:background .05s}
   .beat div.on{background:var(--brand)}
   .beat div.on.accent{background:var(--ok)}
+  .qchoices{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:9px;margin-top:14px}
+  .qchoices button{padding:15px 12px;font-size:.95rem;text-align:left}
+  .qchoices button.correct{background:var(--ok);border-color:var(--ok);color:#04160c}
+  .qchoices button.wrong{background:var(--bad);border-color:var(--bad);color:#1b0605}
+  .qchoices button:disabled{opacity:1}
+  .score{display:flex;gap:20px;margin-top:12px}
+  .score div{text-align:center}
+  .score b{display:block;font-family:var(--mono);font-size:1.5rem}
+  .score span{font-size:.68rem;color:var(--muted)}
+  .staff{background:#f7f8fa;border-radius:9px;padding:8px;margin-top:12px;overflow-x:auto}
+  .staff svg{display:block}
   [hidden]{display:none !important}
   details summary{cursor:pointer;font-weight:700;font-size:.92rem}
   a{color:var(--brand)}
@@ -126,6 +137,7 @@
     <button id="tabEar"  role="tab" aria-selected="true"  aria-controls="paneEar">🎧 聽力（和弦）</button>
     <button id="tabEye"  role="tab" aria-selected="false" aria-controls="paneEye">👁 姿勢（左手）</button>
     <button id="tabBoth" role="tab" aria-selected="false" aria-controls="paneBoth">🎯 合併練習</button>
+    <button id="tabEar2" role="tab" aria-selected="false" aria-controls="paneEar2">📝 聽力測驗</button>
     <button id="tabTool" role="tab" aria-selected="false" aria-controls="paneTool">🔧 調音 · 節拍</button>
   </div>
 
@@ -243,6 +255,42 @@
     </div>
   </section>
 
+  <!-- ═══════════ 聽力測驗 ═══════════ -->
+  <section id="paneEar2" role="tabpanel" hidden>
+    <div class="card">
+      <div class="lbl">題型</div>
+      <div class="targets" id="qTypes"></div>
+      <p class="note" id="qTypeNote" style="margin:9px 0 0"></p>
+      <div class="bar" style="margin:13px 0 0">
+        <button id="qNew" class="primary">出題</button>
+        <button id="qPlay" disabled>再聽一次</button>
+        <label class="hint"><input type="radio" name="ansMode" value="button" checked /> 按鈕作答</label>
+        <label class="hint"><input type="radio" name="ansMode" value="guitar" /> 用吉他彈答案</label>
+        <span id="qStatus" class="hint">按「出題」開始</span>
+      </div>
+    </div>
+
+    <div class="card">
+      <div id="qPrompt" class="say" style="color:var(--muted)">還沒出題</div>
+      <div class="qchoices" id="qChoices"></div>
+      <div id="qFeedback" class="say" style="margin-top:14px;color:var(--muted)"></div>
+      <div id="qExplain" class="note" style="margin-top:5px"></div>
+
+      <div class="bar" style="margin:13px 0 0">
+        <button id="qNotation" disabled>顯示答案樂譜</button>
+        <label class="hint"><input type="radio" name="notaMode" value="staff" checked /> 五線譜</label>
+        <label class="hint"><input type="radio" name="notaMode" value="tab" /> TAB 譜</label>
+      </div>
+      <div class="staff" id="qStaff" hidden></div>
+
+      <div class="score">
+        <div><b id="qOk">0</b><span>答對</span></div>
+        <div><b id="qNo">0</b><span>答錯</span></div>
+        <div><b id="qPct">—</b><span>正確率</span></div>
+      </div>
+    </div>
+  </section>
+
   <!-- ═══════════ 工具 ═══════════ -->
   <section id="paneTool" role="tabpanel" hidden>
     <div class="card">
@@ -315,13 +363,15 @@
 import { computeChroma, identify, chordNotes, CHORD_TEMPLATES, NOTE_NAMES } from './src/chroma.js';
 import { analyse, DEFAULT_RULES, WRIST_ANGLE_UNAVAILABLE, LM } from './src/posture.js';
 import { yin, freqToNote, nearestString, STANDARD_TUNING, Smoother, Hysteresis, midiToFreq } from './src/pitch.js';
+import { makeQuestion, QUESTION_TYPES } from './src/eartraining.js';
+import { renderNotation } from './src/notation.js';
 
 const $ = id => document.getElementById(id);
 const FFT = 8192;
 $('cannot').textContent = WRIST_ANGLE_UNAVAILABLE;
 
 // ═══ 分頁 ═══
-const panes = { tabEar:'paneEar', tabEye:'paneEye', tabBoth:'paneBoth', tabTool:'paneTool' };
+const panes = { tabEar:'paneEar', tabEye:'paneEye', tabBoth:'paneBoth', tabEar2:'paneEar2', tabTool:'paneTool' };
 Object.keys(panes).forEach(t => $(t).addEventListener('click', () => {
   Object.entries(panes).forEach(([tab,pane]) => {
     const on = tab === t;
@@ -651,6 +701,130 @@ function bothLoop(){
 $('bStart').addEventListener('click',bothStart);
 $('bStop').addEventListener('click',bothStop);
 bUpdate();
+
+// ═══════════════ 聽力測驗 ═══════════════
+let qType='interval', qCur=null, qOk=0, qNo=0, qAnswered=false;
+const qChips={};
+Object.entries(QUESTION_TYPES).forEach(([k,v])=>{
+  const b=document.createElement('button');
+  b.className='chip'; b.textContent=v.label; b.type='button';
+  b.style.minWidth='auto';
+  b.setAttribute('aria-pressed',String(k===qType));
+  b.addEventListener('click',()=>{
+    qType=k;
+    Object.entries(qChips).forEach(([n,el])=>el.setAttribute('aria-pressed',String(n===qType)));
+    $('qTypeNote').textContent=QUESTION_TYPES[k].note;
+  });
+  qChips[k]=b; $('qTypes').appendChild(b);
+});
+$('qTypeNote').textContent=QUESTION_TYPES[qType].note;
+
+function playMidis(midis, mode){
+  const a=new (window.AudioContext||window.webkitAudioContext)();
+  const t0=a.currentTime+0.08;
+  const one=(midi,start,dur)=>{
+    for(let h=1;h<=4;h++){
+      const o=a.createOscillator(), g=a.createGain();
+      o.frequency.value=midiToFreq(midi)*h; o.type='triangle';
+      g.gain.setValueAtTime(0,start);
+      g.gain.linearRampToValueAtTime(0.18/(h*h),start+0.015);
+      g.gain.exponentialRampToValueAtTime(0.0001,start+dur);
+      o.connect(g); g.connect(a.destination); o.start(start); o.stop(start+dur+0.05);
+    }
+  };
+  if(mode==='together'){ midis.forEach(m=>one(m,t0,1.6)); }
+  else { midis.forEach((m,i)=>one(m,t0+i*0.75,1.2)); }
+  setTimeout(()=>a.close(), 400+midis.length*900);
+}
+function playChords(chords){
+  const a=new (window.AudioContext||window.webkitAudioContext)();
+  const t0=a.currentTime+0.08;
+  chords.forEach((notes,ci)=>{
+    const start=t0+ci*1.15;
+    notes.forEach((m,ni)=>{
+      for(let h=1;h<=4;h++){
+        const o=a.createOscillator(), g=a.createGain();
+        o.frequency.value=midiToFreq(m)*h; o.type='triangle';
+        const s=start+ni*0.02;
+        g.gain.setValueAtTime(0,s);
+        g.gain.linearRampToValueAtTime(0.15/(h*h),s+0.015);
+        g.gain.exponentialRampToValueAtTime(0.0001,s+1.5);
+        o.connect(g); g.connect(a.destination); o.start(s); o.stop(s+1.6);
+      }
+    });
+  });
+  setTimeout(()=>a.close(), 600+chords.length*1300);
+}
+function playQuestion(){
+  if(!qCur) return;
+  if(qCur.play.mode==='chords') playChords(qCur.play.chords);
+  else playMidis(qCur.play.midis, qCur.play.mode);
+}
+function newQuestion(){
+  qCur=makeQuestion(qType);
+  qAnswered=false;
+  $('qPlay').disabled=false; $('qNotation').disabled=true;
+  $('qStaff').hidden=true; $('qStaff').innerHTML='';
+  $('qFeedback').textContent=''; $('qExplain').textContent='';
+  const mode=document.querySelector('input[name=ansMode]:checked').value;
+  const promptText = {
+    interval:'聽這兩個音，它們相距多少？',
+    progression:'聽這段和弦進行，是什麼級數？',
+    chordtone:'聽這個和弦，它由哪些音組成？',
+  }[qType];
+  $('qPrompt').textContent = promptText +
+    (qCur.direction ? `（${{up:'上行',down:'下行',harmonic:'同時發聲'}[qCur.direction]}）` : '') +
+    (qCur.key ? `　key = ${qCur.key}` : '');
+  $('qPrompt').style.color='var(--ink)';
+
+  $('qChoices').innerHTML='';
+  if(mode==='button'){
+    qCur.choices.forEach(c=>{
+      const b=document.createElement('button'); b.textContent=c; b.type='button';
+      b.addEventListener('click',()=>answer(c,b));
+      $('qChoices').appendChild(b);
+    });
+    $('qStatus').textContent='選一個答案';
+  } else {
+    const need = qCur.guitarAnswer ? qCur.guitarAnswer.join(' → ') : '（此題型請用按鈕作答）';
+    $('qChoices').innerHTML =
+      `<div class="note" style="grid-column:1/-1">用吉他彈出答案：<b>${need}</b><br>` +
+      `切到「聽力（和弦）」分頁開啟麥克風，彈出來讓它判定。` +
+      `<br><span class="hint">音程題目前只支援按鈕作答 —— 單音辨識已做好，串接是下一步。</span></div>`;
+    $('qStatus').textContent='用吉他作答';
+  }
+  playQuestion();
+}
+function answer(choice, btn){
+  if(qAnswered) return;
+  qAnswered=true;
+  const correct = choice===qCur.answer;
+  if(correct) qOk++; else qNo++;
+  [...$('qChoices').children].forEach(b=>{
+    b.disabled=true;
+    if(b.textContent===qCur.answer) b.classList.add('correct');
+    else if(b===btn) b.classList.add('wrong');
+  });
+  $('qFeedback').textContent = correct ? '答對' : `答錯 — 正解是 ${qCur.answer}`;
+  $('qFeedback').style.color = correct ? 'var(--ok)' : 'var(--bad)';
+  $('qExplain').textContent = qCur.explain;
+  $('qNotation').disabled=false;
+  $('qOk').textContent=qOk; $('qNo').textContent=qNo;
+  $('qPct').textContent = Math.round(100*qOk/(qOk+qNo))+'%';
+  logIt(`測驗 ${QUESTION_TYPES[qType].label} ${correct?'✓':'✗'} 答=${choice} 正解=${qCur.answer}`);
+  speak(correct?'答對':'答錯', $('speak1').checked);
+}
+function showNotation(){
+  if(!qCur) return;
+  const mode=document.querySelector('input[name=notaMode]:checked').value;
+  $('qStaff').innerHTML = renderNotation(qCur.notation, mode);
+  $('qStaff').hidden=false;
+}
+$('qNew').addEventListener('click',newQuestion);
+$('qPlay').addEventListener('click',playQuestion);
+$('qNotation').addEventListener('click',showNotation);
+document.querySelectorAll('input[name=notaMode]').forEach(r=>
+  r.addEventListener('change',()=>{ if(!$('qStaff').hidden) showNotation(); }));
 
 // ═══════════════ 調音器 ═══════════════
 let tctx=null, tAnalyser=null, tStream=null, traf=0, tBuf=null;
